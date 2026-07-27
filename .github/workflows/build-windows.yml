@@ -1,4 +1,7 @@
-name: CrabNebula Cloud Release
+name: Build & Release App
+
+permissions:
+  contents: write
 
 on:
   push:
@@ -6,11 +9,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
-env:
-  CN_APPLICATION: ${{ secrets.CN_APPLICATION }}
-
 jobs:
   draft:
+    if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != ''
     runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.draft.outputs.release_id }}
@@ -20,11 +21,12 @@ jobs:
         id: draft
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release draft ${{ env.CN_APPLICATION }} --framework tauri
+          command: release draft ${{ secrets.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
 
   build:
-    needs: draft
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -72,12 +74,14 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Upload to CrabNebula Cloud
+        if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != '' && needs.draft.outputs.release_id != ''
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release upload ${{ env.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
+          command: release upload ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
 
   publish:
+    if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != '' && needs.draft.outputs.release_id != ''
     needs: [draft, build]
     runs-on: ubuntu-22.04
     steps:
@@ -85,5 +89,5 @@ jobs:
       - name: Publish CrabNebula Release
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release publish ${{ env.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
+          command: release publish ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
