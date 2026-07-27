@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Last Token</title>
+    <style>
+      /* Pre-hydration fallback so we never flash white before React mounts. */
+      html, body { margin: 0; padding: 0; height: 100%; background: #161821; color: #ececf1; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      #root { min-height: 100%; }
+      .boot-error {
+        padding: 16px;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.5;
+      }
+      .boot-error h1 { font-size: 13px; color: #ff5d54; margin: 0 0 8px 0; }
+      .boot-error pre { background: #0e1014; border: 1px solid #2a2e3a; border-radius: 6px; padding: 8px; font-size: 10px; max-height: 40vh; overflow: auto; }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script>
+      // Surface boot errors directly into the DOM so a white screen never
+      // happens silently — Tauri WebView swallows console errors otherwise.
+      function renderBootError(title, message, stack) {
+        var root = document.getElementById("root");
+        if (!root || root.firstChild) return;
+
+        var box = document.createElement("div");
+        var heading = document.createElement("h1");
+        var detail = document.createElement("div");
+        box.className = "boot-error";
+        heading.textContent = title;
+        detail.textContent = message;
+        box.appendChild(heading);
+        box.appendChild(detail);
+
+        if (stack) {
+          var trace = document.createElement("pre");
+          trace.textContent = stack;
+          box.appendChild(trace);
+        }
+
+        root.appendChild(box);
+      }
+      window.addEventListener("error", function (event) {
+        renderBootError(
+          "启动错误 (Boot Error)",
+          event.message || "Unknown",
+          event.error && event.error.stack ? event.error.stack : "",
+        );
+      });
+      window.addEventListener("unhandledrejection", function (event) {
+        var reason = event.reason;
+        renderBootError(
+          "启动错误 (Unhandled Rejection)",
+          reason && reason.message ? reason.message : String(reason),
+          reason && reason.stack ? reason.stack : "",
+        );
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

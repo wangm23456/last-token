@@ -1,0 +1,60 @@
+@source "../../node_modules/@vercel/geistdocs/dist/**/*.js";
+@source "../../node_modules/streamdown/dist/*.js";
+@source "../**/*.{ts,tsx,mdx}";
+@source "../../components/**/*.{ts,tsx}";
+@source "../../../docs/**/*.{md,mdx}";
+
+html {
+  scroll-padding-top: 5rem;
+}
+
+/* Tint the root + body so overscroll and any gaps match the page background
+   instead of showing white. */
+html,
+body {
+  background-color: var(--ds-background-200);
+}
+
+/* Tint the global footer to match the landing background, but only on the
+   home route (`/`), which renders the [data-home-route] marker. */
+body:has([data-home-route]) footer {
+  @apply bg-background-200;
+}
+
+/* On home routes the navbar starts borderless and fades its bottom border in
+   only once the page is scrolled (ScrollState toggles [data-scrolled]). */
+body:has([data-home-route]) header {
+  border-bottom-color: transparent !important;
+  transition: border-color 200ms ease;
+}
+html[data-scrolled] body:has([data-home-route]) header {
+  border-bottom-color: var(--ds-gray-alpha-400) !important;
+}
+
+/* Align docs content with navbar on mobile. */
+#nd-page {
+  @apply max-md:px-6;
+}
+
+/*
+ * On mobile the sticky MobileDocsBar abuts the navbar via a negative top
+ * margin, which would otherwise overlap and clip the page breadcrumb rendered
+ * above it. Hide the breadcrumb on mobile so the bar sits flush under the
+ * navbar; it stays visible on desktop, where the bar is hidden.
+ */
+#nd-page > .text-fd-muted-foreground:first-child {
+  @apply max-md:hidden;
+}
+
+/* TOC and footer links use gray-1000. */
+#nd-toc {
+  @apply text-gray-1000 md:pl-6;
+}
+
+#nd-toc a {
+  @apply text-gray-900 hover:text-gray-1000;
+}
+
+#nd-toc a[data-active="true"] {
+  @apply text-gray-1000;
+}
