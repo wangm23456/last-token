@@ -1,4 +1,4 @@
-name: Release App
+name: Build & Release App
 
 on:
   push:
@@ -7,7 +7,21 @@ on:
   workflow_dispatch:
 
 jobs:
+  draft-release:
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Draft CrabNebula Release
+        id: draft
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release draft ${{ secrets.CN_APPLICATION }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}
+
   publish-tauri:
+    needs: draft-release
     permissions:
       contents: write
     strategy:
@@ -55,3 +69,10 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Upload assets to CrabNebula Cloud
+        if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != ''
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release upload ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft-release.outputs.release_id }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}
