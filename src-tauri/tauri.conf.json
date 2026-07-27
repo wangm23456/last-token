@@ -41,12 +41,5 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {
-  	"updater": {
-  		"endpoints": [
-  			"https://cdn.crabnebula.app/update/painless/last-token/{{target}}-{{arch}}/{{current_version}}"
-  		],
-  		"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgyNTBGNTQzMjM0ODgzNzgKUldSNGcwZ2pRL1ZRZ3FLdHMwdElNZG8zQW53NWJhRFo5YVF6TUNuM0hDM0JjK3k4cnZCa0Q0RlUK"
-  	}
-  }
+  "plugins": {}
 }
