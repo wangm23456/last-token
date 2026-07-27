@@ -9,20 +9,33 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  CN_API_KEY: ${{ secrets.CN_API_KEY }}
+  CN_APPLICATION: ${{ secrets.CN_APPLICATION }}
+
 jobs:
   draft:
-    if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != ''
     runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.draft.outputs.release_id }}
+      has_cn: ${{ steps.check_cn.outputs.has_cn }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check CrabNebula Secrets
+        id: check_cn
+        run: |
+          if [ -n "$CN_API_KEY" ] && [ -n "$CN_APPLICATION" ]; then
+            echo "has_cn=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_cn=false" >> $GITHUB_OUTPUT
+          fi
       - name: Draft Release in CrabNebula Cloud
+        if: steps.check_cn.outputs.has_cn == 'true'
         id: draft
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release draft ${{ secrets.CN_APPLICATION }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
+          command: release draft ${{ env.CN_APPLICATION }} --framework tauri
+          api-key: ${{ env.CN_API_KEY }}
 
   build:
     permissions:
@@ -74,20 +87,20 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Upload to CrabNebula Cloud
-        if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != '' && needs.draft.outputs.release_id != ''
+        if: env.CN_API_KEY != '' && env.CN_APPLICATION != '' && needs.draft.outputs.release_id != ''
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release upload ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
+          command: release upload ${{ env.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
+          api-key: ${{ env.CN_API_KEY }}
 
   publish:
-    if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != '' && needs.draft.outputs.release_id != ''
     needs: [draft, build]
+    if: needs.draft.outputs.has_cn == 'true' && needs.draft.outputs.release_id != ''
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Publish CrabNebula Release
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release publish ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
+          command: release publish ${{ env.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
+          api-key: ${{ env.CN_API_KEY }}
