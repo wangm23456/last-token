@@ -1,4 +1,4 @@
-name: Build & Release App
+name: CrabNebula Cloud Release
 
 on:
   push:
@@ -6,24 +6,25 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  CN_APPLICATION: ${{ secrets.CN_APPLICATION }}
+
 jobs:
-  draft-release:
+  draft:
     runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.draft.outputs.release_id }}
     steps:
       - uses: actions/checkout@v4
-      - name: Draft CrabNebula Release
+      - name: Draft Release in CrabNebula Cloud
         id: draft
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release draft ${{ secrets.CN_APPLICATION }} --framework tauri
+          command: release draft ${{ env.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
 
-  publish-tauri:
-    needs: draft-release
-    permissions:
-      contents: write
+  build:
+    needs: draft
     strategy:
       fail-fast: false
       matrix:
@@ -39,40 +40,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: setup node / bun
+      - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
 
-      - name: install Rust stable
+      - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
-      - name: install dependencies (ubuntu only)
+      - name: Install Linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: install frontend dependencies
+      - name: Install frontend dependencies
         run: bun install
 
-      - name: build and publish tauri app
+      - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
           releaseName: 'Last Token v__VERSION__'
-          releaseBody: 'See the assets below to download Last Token for your platform.'
+          releaseBody: 'Release assets built via CI.'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Upload assets to CrabNebula Cloud
-        if: secrets.CN_API_KEY != '' && secrets.CN_APPLICATION != ''
+      - name: Upload to CrabNebula Cloud
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release upload ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft-release.outputs.release_id }} --framework tauri
+          command: release upload ${{ env.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}
+
+  publish:
+    needs: [draft, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish CrabNebula Release
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release publish ${{ env.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
