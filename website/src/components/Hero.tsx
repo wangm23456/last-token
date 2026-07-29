@@ -1,5 +1,6 @@
 import { Apple, Download, Monitor, Terminal } from 'lucide-react'
 import { RELEASES_URL, REPO_URL } from '../lib/utils'
+import { useLocale } from '../i18n/LocaleContext'
 
 function GithubIcon({ className }: { className?: string }) {
   return (
@@ -15,6 +16,8 @@ function GithubIcon({ className }: { className?: string }) {
 }
 
 export function Hero() {
+  const { t } = useLocale()
+
   return (
     <section id="top" className="relative overflow-hidden pt-16 pb-20 sm:pt-24 sm:pb-28">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,oklch(0.24_0.01_260_/_0.35)_1px,transparent_1px),linear-gradient(to_bottom,oklch(0.24_0.01_260_/_0.35)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,black,transparent)]" />
@@ -23,20 +26,19 @@ export function Hero() {
         <div className="space-y-7">
           <div className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
             <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-status-safe" />
-            本地优先 · 隐私安全 · 开源 MIT
+            {t.hero.badge}
           </div>
 
           <div className="space-y-4">
             <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
-              API 额度耗尽，
+              {t.hero.titleLine1}
               <br />
               <span className="bg-gradient-to-r from-white via-white to-status-safe bg-clip-text text-transparent">
-                不该是惊喜
+                {t.hero.titleHighlight}
               </span>
             </h1>
             <p className="max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              跨平台 LLM / AI API 额度实时监测与耗尽预警。自动扫描本地 CLI
-              凭证，计算消耗速率，在额度见底前发出提醒。
+              {t.hero.subtitle}
             </p>
           </div>
 
@@ -46,7 +48,7 @@ export function Hero() {
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-transform duration-150 hover:opacity-90 active:scale-[0.97]"
             >
               <Download className="h-4 w-4" />
-              免费下载
+              {t.hero.download}
             </a>
             <a
               href={REPO_URL}
@@ -55,7 +57,7 @@ export function Hero() {
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/50 px-5 py-2.5 text-sm font-medium text-foreground transition-colors duration-150 hover:bg-muted active:scale-[0.97]"
             >
               <GithubIcon className="h-4 w-4" />
-              查看源码
+              {t.hero.viewSource}
             </a>
           </div>
 
@@ -86,11 +88,19 @@ export function Hero() {
 }
 
 function AppPreview() {
+  const { t } = useLocale()
+
   const providers = [
-    { name: 'Claude', used: 72, color: 'bg-status-warning', eta: '约 4.2h' },
-    { name: 'Copilot', used: 38, color: 'bg-status-safe', eta: '约 18h' },
-    { name: 'Gemini', used: 91, color: 'bg-status-danger', eta: '约 0.8h' },
-    { name: 'Kimi', used: 54, color: 'bg-status-safe', eta: '约 9h' },
+    { name: 'Claude', used: 72, color: 'bg-status-warning', eta: '4.2h' },
+    { name: 'Copilot', used: 38, color: 'bg-status-safe', eta: '18h' },
+    { name: 'Gemini', used: 91, color: 'bg-status-danger', eta: '0.8h' },
+    { name: 'Kimi', used: 54, color: 'bg-status-safe', eta: '9h' },
+  ]
+
+  const stats = [
+    { label: t.hero.preview.monitoring, value: '8' },
+    { label: t.hero.preview.alerts, value: '1' },
+    { label: t.hero.preview.resetWindow, value: '5h' },
   ]
 
   return (
@@ -104,18 +114,14 @@ function AppPreview() {
           <div className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-status-safe" />
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              运行中
+              {t.hero.preview.running}
             </span>
           </div>
         </div>
 
         <div className="space-y-3 p-4">
           <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: '监测中', value: '8' },
-              { label: '预警', value: '1' },
-              { label: '重置周期', value: '5h' },
-            ].map((stat) => (
+            {stats.map((stat) => (
               <div
                 key={stat.label}
                 className="rounded-lg border border-border/60 bg-card/70 px-3 py-2.5"
@@ -128,15 +134,15 @@ function AppPreview() {
 
           <div className="space-y-2.5 rounded-xl border border-border/60 bg-card/40 p-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium">额度概览</span>
-              <span className="text-muted-foreground">实时消耗 · %/小时</span>
+              <span className="font-medium">{t.hero.preview.overview}</span>
+              <span className="text-muted-foreground">{t.hero.preview.realtime}</span>
             </div>
             {providers.map((p, i) => (
               <div key={p.name} className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">{p.name}</span>
                   <span className="tabular-nums">
-                    {p.used}% · 预计耗尽 {p.eta}
+                    {p.used}% · {t.hero.preview.etaPrefix} {p.eta}
                   </span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -150,7 +156,7 @@ function AppPreview() {
           </div>
 
           <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-3 py-2 text-xs text-status-danger">
-            Gemini 额度将在 1 小时内耗尽 — 建议切换备用提供商
+            {t.hero.preview.warning}
           </div>
         </div>
       </div>

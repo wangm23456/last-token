@@ -1,6 +1,9 @@
 import { REPO_URL } from '../lib/utils'
+import { useLocale } from '../i18n/LocaleContext'
 
 export function Footer() {
+  const { t } = useLocale()
+
   return (
     <footer className="border-t border-border/50 py-10">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
@@ -12,9 +15,7 @@ export function Footer() {
           />
           <div>
             <div className="text-sm font-semibold tracking-tight">Last Token</div>
-            <div className="text-xs text-muted-foreground">
-              跨平台 LLM API 额度实时监测
-            </div>
+            <div className="text-xs text-muted-foreground">{t.footer.tagline}</div>
           </div>
         </div>
 
@@ -33,7 +34,7 @@ export function Footer() {
             rel="noreferrer"
             className="transition-colors hover:text-foreground"
           >
-            MIT License
+            {t.footer.license}
           </a>
           <span>© {new Date().getFullYear()}</span>
         </div>

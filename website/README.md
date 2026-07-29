@@ -1,21 +1,23 @@
 # Last Token Website
 
-Last Token 官方落地页（Vite + React + Tailwind）。
+Marketing landing page for [Last Token](https://github.com/wangm23456/last-token).
 
-- 线上：https://website-psi-liard-42.vercel.app
-- 仓库目录：`website/`
-- 部署：Vercel Git 联动（`main` 推送后，仅 `website/**` 变更触发生产构建）
+- Stack: Vite + React + TypeScript + Tailwind CSS v4
+- Default language: **English**
+- Optional language: Chinese (`EN / 中文` switch in the navbar)
+- Production: [website-psi-liard-42.vercel.app](https://website-psi-liard-42.vercel.app)
 
-## 本地开发
+## Local development
 
 ```bash
 bun install
 bun run dev
 ```
 
-## 构建
+## Build
 
 ```bash
 bun run build
-bun run preview
 ```
+
+Deployed automatically by Vercel when `website/` changes on `main`.
