@@ -11,6 +11,7 @@ on:
 
 jobs:
   draft:
+    runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.cn_id.outputs.release_id }}
       has_cn: ${{ steps.check_cn.outputs.has_cn }}
