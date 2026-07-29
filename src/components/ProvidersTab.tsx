@@ -26,6 +26,7 @@ import {
   pollCopilotDeviceFlow,
   getSettings,
   getDashboard,
+  requestNotificationPermission,
 } from "@/lib/backend";
 import { applyAccountOrder, applyIdOrder } from "@/lib/accountOrder";
 import { getErrorMessage } from "@/lib/errors";
@@ -61,7 +62,8 @@ import {
 } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Empty } from "@/components/ui/empty";
-import { PublicAccount, ProviderConfig, ProviderKind, SecretPayload, CredentialProbe } from "@/types";
+import { tierSortKey } from "@/components/QuotaTierList";
+import { AlertRule, PublicAccount, ProviderConfig, ProviderKind, SecretPayload, CredentialProbe } from "@/types";
 
 const providerLabel = (p: ProviderKind) => {
   const labels: Record<ProviderKind, string> = {
@@ -114,6 +116,11 @@ export function ProvidersTab() {
   const copilotInterval = React.useRef<number | null>(null);
 
   const [isImporting, setIsImporting] = React.useState(false);
+  // Per-tier alert rule drafts (only relevant when editing existing accounts)
+  const [alertDrafts, setAlertDrafts] = React.useState<AlertRule[]>([]);
+  type AlertMeta = { label: string; unlimited: boolean; missing: boolean };
+  const [alertMeta, setAlertMeta] = React.useState<Record<string, AlertMeta>>({});
+  const [alertsOnlyMode, setAlertsOnlyMode] = React.useState(false);
 
   // 1. Fetch Accounts
   const { data: accounts = [], isLoading } = useQuery({
@@ -217,8 +224,57 @@ export function ProvidersTab() {
     }
   };
 
-  const handleEdit = (acc: PublicAccount) => {
+
+  const buildAlertDrafts = (acc: PublicAccount) => {
+    const dashAcc = dashboard?.accounts.find((a) => a.account.id === acc.id);
+    const tiers = dashAcc?.tiers ?? [];
+    const byId = new Map(acc.alertRules.map((r) => [r.tierId, r]));
+    const meta: Record<string, { label: string; unlimited: boolean; missing: boolean }> = {};
+    const drafts: AlertRule[] = [];
+
+    for (const t of tiers) {
+      const existing = byId.get(t.quota.id);
+      meta[t.quota.id] = {
+        label: t.quota.label,
+        unlimited: t.quota.unlimited,
+        missing: false,
+      };
+      if (t.quota.unlimited) {
+        drafts.push({
+          tierId: t.quota.id,
+          enabled: false,
+          thresholdPercent: existing?.thresholdPercent ?? 80,
+        });
+      } else {
+        drafts.push(
+          existing ?? {
+            tierId: t.quota.id,
+            enabled: false,
+            thresholdPercent: 80,
+          }
+        );
+      }
+      byId.delete(t.quota.id);
+    }
+
+    for (const [tierId, rule] of byId) {
+      meta[tierId] = { label: tierId, unlimited: false, missing: true };
+      drafts.push(rule);
+    }
+
+    drafts.sort((a, b) => {
+      const [ra, sa] = tierSortKey(a.tierId);
+      const [rb, sb] = tierSortKey(b.tierId);
+      return ra - rb || sa.localeCompare(sb) || a.tierId.localeCompare(b.tierId);
+    });
+
+    setAlertMeta(meta);
+    setAlertDrafts(drafts);
+  };
+
+  const handleEdit = (acc: PublicAccount, opts?: { alertsOnly?: boolean }) => {
     setEditingAccount(acc);
+    setAlertsOnlyMode(!!opts?.alertsOnly || acc.credentialSource === "cli_auto");
     setDisplayName(acc.displayName);
     setEnabled(acc.enabled);
     setProviderType(acc.provider);
@@ -251,16 +307,23 @@ export function ProvidersTab() {
     setAccessKeyId("");
     setSecretAccessKey("");
 
+    buildAlertDrafts(acc);
     setIsFormOpen(true);
   };
 
   const handleAddNew = () => {
     setEditingAccount(null);
+    setAlertsOnlyMode(false);
+    setAlertDrafts([]);
+    setAlertMeta({});
     resetForm();
     setIsFormOpen(true);
   };
 
   const resetForm = () => {
+    setAlertsOnlyMode(false);
+    setAlertDrafts([]);
+    setAlertMeta({});
     setDisplayName("");
     setEnabled(true);
     setProviderType("kimi");
@@ -288,7 +351,54 @@ export function ProvidersTab() {
     }
   };
 
+  const alertRulesValid = alertDrafts.every((r) => {
+    const meta = alertMeta[r.tierId];
+    if (meta?.unlimited) return true;
+    return Number.isInteger(r.thresholdPercent) && r.thresholdPercent >= 1 && r.thresholdPercent <= 99;
+  });
+
+  const handleAlertToggle = async (tierId: string, enabled: boolean) => {
+    const meta = alertMeta[tierId];
+    if (meta?.unlimited) return;
+    if (enabled) {
+      try {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          toast.error("系统通知权限未授予，无法开启额度告警");
+          return;
+        }
+      } catch (err) {
+        toast.error("系统通知权限未授予，无法开启额度告警");
+        return;
+      }
+    }
+    setAlertDrafts((prev) =>
+      prev.map((r) => (r.tierId === tierId ? { ...r, enabled } : r))
+    );
+  };
+
   const handleFormSubmit = () => {
+    if (editingAccount && !alertRulesValid) {
+      toast.error("请将告警阈值设为 1–99 的整数");
+      return;
+    }
+
+    if (alertsOnlyMode && editingAccount) {
+      saveMutation.mutate({
+        id: editingAccount.id,
+        displayName: editingAccount.displayName,
+        enabled: editingAccount.enabled,
+        config: editingAccount.config,
+        secret: undefined,
+        alertRules: alertDrafts.map((r) => ({
+          tierId: r.tierId,
+          enabled: alertMeta[r.tierId]?.unlimited ? false : r.enabled,
+          thresholdPercent: r.thresholdPercent,
+        })),
+      });
+      return;
+    }
+
     if (!displayName.trim()) {
       toast.error("请输入提供商名称");
       return;
@@ -368,6 +478,11 @@ export function ProvidersTab() {
       enabled,
       config,
       secret,
+      alertRules: editingAccount ? alertDrafts.map((r) => ({
+        tierId: r.tierId,
+        enabled: alertMeta[r.tierId]?.unlimited ? false : r.enabled,
+        thresholdPercent: r.thresholdPercent,
+      })) : [],
     });
   };
 
@@ -583,6 +698,20 @@ export function ProvidersTab() {
                     <p className="text-[10px] text-status-warning/90 font-medium">{probe.message}</p>
                   )}
                 </div>
+                {(() => {
+                  const cliAcc = accounts.find((a) => a.id === probe.accountId);
+                  if (!cliAcc) return null;
+                  return (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="h-7 text-[11px] border-border shrink-0"
+                      onClick={() => handleEdit(cliAcc, { alertsOnly: true })}
+                    >
+                      告警设置
+                    </Button>
+                  );
+                })()}
               </CardContent>
             </Card>
           ))}
@@ -666,20 +795,24 @@ export function ProvidersTab() {
           <DialogContent className="sm:max-w-[420px] bg-card border-border text-foreground overflow-y-auto max-h-[90vh]">
             <DialogHeader>
               <DialogTitle className="text-sm font-bold">
-                {editingAccount ? `编辑提供商: ${editingAccount.displayName}` : "添加自管提供商"}
+                {editingAccount ? (alertsOnlyMode ? `告警设置: ${editingAccount.displayName}` : `编辑提供商: ${editingAccount.displayName}`) : "添加自管提供商"}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                凭证优先从对应环境变量读取（如 KIMI_API_KEY、MINIMAX_API_KEY、ANTHROPIC_API_KEY、GITHUB_TOKEN 等）。下方输入仅在当前会话内存缓存，不会持久化到钥匙串或磁盘。
+                {alertsOnlyMode
+                  ? "为各额度周期配置系统通知阈值。开启告警前会请求系统通知权限。"
+                  : "凭证优先从对应环境变量读取（如 KIMI_API_KEY、MINIMAX_API_KEY、ANTHROPIC_API_KEY、GITHUB_TOKEN 等）。下方输入仅在当前会话内存缓存，不会持久化到钥匙串或磁盘。"}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3.5 mt-2 py-1">
+              {!alertsOnlyMode && (
+              <>
               {/* Type Select (Disabled on edit to prevent provider change) */}
               <Field label="提供商类型">
                 <Select
                   value={providerType}
                   onValueChange={(val) => { if (val) setProviderType(val as ProviderKind); }}
-                  disabled={!!editingAccount}
+                  disabled={!!editingAccount || alertsOnlyMode}
                 >
                   <SelectTrigger
                     aria-label="提供商类型"
@@ -701,7 +834,7 @@ export function ProvidersTab() {
 
               {/* Display Name */}
               <Field label="显示名称">
-                <Input
+                <Input disabled={alertsOnlyMode}
                   aria-label="显示名称"
                   className="h-8 text-xs bg-card border-border text-foreground"
                   placeholder={`如: My ${providerLabel(providerType)} Account`}
@@ -922,7 +1055,98 @@ export function ProvidersTab() {
                 </>
               )}
 
+              </>
+              )}
+
+              {/* Quota Alerts */}
+              <div className="border-t border-border/40 pt-3 space-y-2.5">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-foreground">额度告警</span>
+                  <p className="text-[10px] text-muted-foreground">
+                    按额度周期独立配置。达到阈值或耗尽时发送系统通知。
+                  </p>
+                </div>
+                {!editingAccount ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    保存并完成首次刷新后可配置额度周期告警
+                  </p>
+                ) : alertDrafts.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    保存并完成首次刷新后可配置额度周期告警
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {alertDrafts.map((rule) => {
+                      const meta = alertMeta[rule.tierId];
+                      const unlimited = !!meta?.unlimited;
+                      const missing = !!meta?.missing;
+                      const invalid =
+                        !unlimited &&
+                        !(
+                          Number.isInteger(rule.thresholdPercent) &&
+                          rule.thresholdPercent >= 1 &&
+                          rule.thresholdPercent <= 99
+                        );
+                      return (
+                        <div
+                          key={rule.tierId}
+                          className="rounded-md border border-border/50 bg-card/40 p-2.5 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="text-xs font-medium text-foreground truncate">
+                                {meta?.label ?? rule.tierId}
+                              </div>
+                              {missing && (
+                                <p className="text-[10px] text-status-warning">当前未返回</p>
+                              )}
+                              {unlimited && (
+                                <p className="text-[10px] text-muted-foreground">无限额度无需告警</p>
+                              )}
+                            </div>
+                            <Switch
+                              checked={unlimited ? false : rule.enabled}
+                              disabled={unlimited}
+                              onCheckedChange={(v) => handleAlertToggle(rule.tierId, v)}
+                              aria-label={`启用 ${meta?.label ?? rule.tierId} 告警`}
+                            />
+                          </div>
+                          {!unlimited && (
+                            <Field
+                              label="使用率阈值 (%)"
+                              description={invalid ? "请输入 1–99 的整数" : undefined}
+                            >
+                              <Input
+                                aria-label={`${meta?.label ?? rule.tierId} 告警阈值`}
+                                className="h-8 text-xs bg-card border-border text-foreground"
+                                type="number"
+                                min={1}
+                                max={99}
+                                step={1}
+                                value={Number.isFinite(rule.thresholdPercent) ? rule.thresholdPercent : ""}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  const num = raw === "" ? Number.NaN : Number(raw);
+                                  setAlertDrafts((prev) =>
+                                    prev.map((r) =>
+                                      r.tierId === rule.tierId
+                                        ? { ...r, thresholdPercent: num }
+                                        : r
+                                    )
+                                  );
+                                }}
+                              />
+                            </Field>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Enabled Switch */}
+              {!alertsOnlyMode && (
               <div className="flex items-center justify-between border-t border-border/40 pt-3 text-xs mt-1">
                 <div className="space-y-0.5">
                   <span className="font-semibold text-foreground">启用此账户监测</span>
@@ -934,6 +1158,7 @@ export function ProvidersTab() {
                   aria-label="启用此账户监测"
                 />
               </div>
+              )}
             </div>
 
             <DialogFooter className="border-t border-border/40 pt-3 gap-2">
@@ -941,7 +1166,7 @@ export function ProvidersTab() {
                 取消
               </Button>
               {providerType !== "copilot" && (
-                <Button size="sm" className="text-xs h-8" onClick={handleFormSubmit} disabled={saveMutation.isPending}>
+                <Button size="sm" className="text-xs h-8" onClick={handleFormSubmit} disabled={saveMutation.isPending || (!!editingAccount && !alertRulesValid)}>
                   确定
                 </Button>
               )}

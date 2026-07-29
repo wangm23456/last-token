@@ -71,6 +71,9 @@ export async function deleteAccount(accountId: string): Promise<void> {
 export async function probeCliCredentials(): Promise<CredentialProbe[]> {
   return safeInvoke<CredentialProbe[]>("probe_cli_credentials");
 }
+export async function requestNotificationPermission(): Promise<boolean> {
+  return safeInvoke<boolean>("request_notification_permission");
+}
 
 export async function discoverEnvAccounts(): Promise<PublicAccount[]> {
   return safeInvoke<PublicAccount[]>("discover_env_accounts");

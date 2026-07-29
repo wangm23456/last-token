@@ -77,6 +77,12 @@ export type ProviderConfig =
   | { type: "zenmux"; quotaUrl: string }
   | { type: "volcengine"; region: string };
 
+export interface AlertRule {
+  tierId: string;
+  enabled: boolean;
+  thresholdPercent: number;
+}
+
 export interface PublicAccount {
   id: string;
   provider: ProviderKind;
@@ -85,6 +91,7 @@ export interface PublicAccount {
   credentialSource: CredentialSource;
   hasCredential: boolean;
   config: ProviderConfig;
+  alertRules: AlertRule[];
 }
 
 export interface AccountDashboard {
@@ -114,6 +121,7 @@ export interface AccountInput {
   config: ProviderConfig;
   secret?: SecretPayload;
   removeCredential?: boolean;
+  alertRules?: AlertRule[];
 }
 
 export interface Settings {

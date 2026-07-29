@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use serde_json::json;
-use last_token_lib::domain::{RiskState, HistoryPoint, ProviderKind, ProviderConfig};
+use last_token_lib::domain::{RiskState, HistoryPoint, ProviderConfig};
 use last_token_lib::forecast::compute_forecast;
 use last_token_lib::providers::{
     parse_claude_quota_body, parse_codex_quota_body, parse_gemini_quota_body,
@@ -433,7 +432,7 @@ fn test_storage_and_secrets() {
     let account_id = "test-account";
     let config = ProviderConfig::Kimi;
     let config_json = serde_json::to_string(&config).unwrap();
-    storage.save_account(account_id, "kimi", "Kimi Account", true, "env", &config_json).unwrap();
+    storage.save_account(account_id, "kimi", "Kimi Account", true, "env", &config_json, None).unwrap();
     secret_store.set_secret(account_id, "api_key", "kimi_secret_123").unwrap();
 
     // Verify list
@@ -469,7 +468,7 @@ fn test_storage_latest_batch_tier_ids_and_ordering() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Storage::new(dir.path().join("test.sqlite3")).unwrap();
 
-    storage.save_account("acc", "kimi", "Kimi", true, "env", "{}").unwrap();
+    storage.save_account("acc", "kimi", "Kimi", true, "env", "{}", None).unwrap();
 
     let old_ts = 1000i64;
     let new_ts = 2000i64;
@@ -495,7 +494,7 @@ fn test_storage_metadata_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Storage::new(dir.path().join("test.sqlite3")).unwrap();
 
-    storage.save_account("acc", "copilot", "Copilot", true, "env", "{}").unwrap();
+    storage.save_account("acc", "copilot", "Copilot", true, "env", "{}", None).unwrap();
     storage
         .insert_snapshot(
             "acc",
@@ -626,6 +625,7 @@ fn test_apply_account_order_manual_and_risk_fallback() {
             credential_source: CredentialSource::Env,
             has_credential: true,
             config: ProviderConfig::Claude,
+            alert_rules: vec![],
         },
         credential_status: CredentialStatus::Valid,
         stale: false,
@@ -761,6 +761,7 @@ fn test_keyring_source_migrated_to_env() {
             true,
             "keyring",
             "{\"type\":\"kimi\"}",
+            None,
         )
         .unwrap();
     drop(storage);
@@ -779,3 +780,305 @@ fn test_credential_source_unknown_deserializes_fails() {
     assert!(serde_json::from_str::<last_token_lib::domain::CredentialSource>("\"keyring\"").is_err());
 }
 
+
+
+// ── Alert evaluation & persistence ───────────────────────────────
+
+#[test]
+fn test_is_quota_cycle_break_semantics() {
+    use last_token_lib::forecast::is_quota_cycle_break;
+
+    // utilization drop > 2
+    assert!(is_quota_cycle_break(50.0, Some(1000), 47.0, Some(1000), 5));
+    // small drop is not a break
+    assert!(!is_quota_cycle_break(50.0, Some(1000), 48.5, Some(1000), 5));
+    // resets_at jump beyond 2 * polling interval
+    let polling = 5_i64;
+    let threshold = polling * 2 * 60 * 1000;
+    assert!(is_quota_cycle_break(50.0, Some(10_000), 51.0, Some(10_000 + threshold + 1), polling));
+    // None ↔ Some alone is NOT a break
+    assert!(!is_quota_cycle_break(50.0, None, 51.0, Some(10_000), polling));
+    assert!(!is_quota_cycle_break(50.0, Some(10_000), 51.0, None, polling));
+}
+
+#[test]
+fn test_save_account_metadata_preserves_snapshots_and_none_rules() {
+    use last_token_lib::domain::AlertRule;
+    use last_token_lib::storage::Storage;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let db = Storage::new(tmp.path().join("alerts.db")).unwrap();
+    db.save_account("acc1", "kimi", "Kimi", true, "env", "{\"type\":\"kimi\"}", None)
+        .unwrap();
+    db.insert_snapshot("acc1", "five_hour", 10.0, Some(999), 1000, None, None, None, false)
+        .unwrap();
+
+    // metadata-only update must keep snapshots
+    db.save_account("acc1", "kimi", "Kimi Renamed", true, "env", "{\"type\":\"kimi\"}", None)
+        .unwrap();
+    let snaps = db.get_snapshots("acc1", "five_hour", 10).unwrap();
+    assert_eq!(snaps.len(), 1);
+
+    let rules = vec![AlertRule {
+        tier_id: "five_hour".into(),
+        enabled: true,
+        threshold_percent: 80,
+    }];
+    db.save_account(
+        "acc1",
+        "kimi",
+        "Kimi Renamed",
+        true,
+        "env",
+        "{\"type\":\"kimi\"}",
+        Some(&rules),
+    )
+    .unwrap();
+    assert_eq!(db.list_alert_rules("acc1").unwrap().len(), 1);
+
+    // None preserves rules
+    db.save_account(
+        "acc1",
+        "kimi",
+        "Kimi Again",
+        false,
+        "env",
+        "{\"type\":\"kimi\"}",
+        None,
+    )
+    .unwrap();
+    assert_eq!(db.list_alert_rules("acc1").unwrap().len(), 1);
+
+    // Some([]) clears rules
+    db.save_account(
+        "acc1",
+        "kimi",
+        "Kimi Again",
+        false,
+        "env",
+        "{\"type\":\"kimi\"}",
+        Some(&[]),
+    )
+    .unwrap();
+    assert!(db.list_alert_rules("acc1").unwrap().is_empty());
+}
+
+#[test]
+fn test_evaluate_alert_dedupe_and_exhaustion_priority() {
+    use last_token_lib::alerts::{evaluate_alert, AlertEventKind, AlertState};
+    use last_token_lib::domain::{AlertRule, QuotaTier, RiskState, TierDashboard, TierForecast};
+
+    fn tier(util: f64, state: RiskState) -> TierDashboard {
+        TierDashboard {
+            quota: QuotaTier {
+                id: "five_hour".into(),
+                label: "5-Hour Session".into(),
+                utilization: util,
+                resets_at: Some(10_000_000),
+                used: None,
+                limit: None,
+                unit: None,
+                unlimited: false,
+            },
+            forecast: TierForecast {
+                state,
+                rate_per_hour: 1.5,
+                projected_utilization_at_reset: util,
+                exhaustion_at: None,
+                sample_count: 5,
+                observation_minutes: 30,
+            },
+        }
+    }
+
+    let rule = AlertRule {
+        tier_id: "five_hour".into(),
+        enabled: true,
+        threshold_percent: 80,
+    };
+
+    // 79 -> 80 fires once
+    let d1 = evaluate_alert(&rule, None, &tier(80.0, RiskState::Safe), 5);
+    assert_eq!(d1.event, Some(AlertEventKind::ThresholdReached));
+
+    let prev = AlertState {
+        account_id: "a".into(),
+        tier_id: "five_hour".into(),
+        last_resets_at: Some(10_000_000),
+        last_utilization: 80.0,
+        threshold_notified: true,
+        exhausted_notified: false,
+    };
+    let d2 = evaluate_alert(&rule, Some(&prev), &tier(85.0, RiskState::Safe), 5);
+    assert_eq!(d2.event, None);
+
+    // 80 -> 99.9 only exhausts
+    let d3 = evaluate_alert(&rule, Some(&prev), &tier(99.9, RiskState::Exhausted), 5);
+    assert_eq!(d3.event, Some(AlertEventKind::Exhausted));
+
+    // direct jump to 99.9 with no previous -> Exhausted only
+    let d4 = evaluate_alert(&rule, None, &tier(99.95, RiskState::Exhausted), 5);
+    assert_eq!(d4.event, Some(AlertEventKind::Exhausted));
+
+    // re-arm after utilization drop > 2
+    let armed_prev = AlertState {
+        account_id: "a".into(),
+        tier_id: "five_hour".into(),
+        last_resets_at: Some(10_000_000),
+        last_utilization: 90.0,
+        threshold_notified: true,
+        exhausted_notified: true,
+    };
+    let d5 = evaluate_alert(&rule, Some(&armed_prev), &tier(80.0, RiskState::Safe), 5);
+    assert_eq!(d5.event, Some(AlertEventKind::ThresholdReached));
+    assert!(!d5.next_state.threshold_notified);
+    assert!(!d5.next_state.exhausted_notified);
+}
+
+struct FakeSender {
+    calls: std::sync::Mutex<Vec<(String, String)>>,
+    fail: bool,
+}
+
+impl last_token_lib::alerts::NotificationSender for FakeSender {
+    fn send(&self, title: &str, body: &str) -> Result<(), String> {
+        if self.fail {
+            return Err("boom".into());
+        }
+        self.calls.lock().unwrap().push((title.to_string(), body.to_string()));
+        Ok(())
+    }
+}
+
+#[test]
+fn test_process_alerts_skips_stale_error_unlimited_and_isolates_accounts() {
+    use last_token_lib::alerts::process_alerts;
+    use last_token_lib::domain::{
+        AccountDashboard, AlertRule, CredentialSource, CredentialStatus, DashboardSnapshot,
+        ProviderConfig, ProviderKind, PublicAccount, QuotaTier, RiskState, TierDashboard,
+        TierForecast,
+    };
+    use last_token_lib::storage::Storage;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let db = Storage::new(tmp.path().join("process.db")).unwrap();
+
+    db.save_account("good", "kimi", "Good", true, "env", "{\"type\":\"kimi\"}", None)
+        .unwrap();
+    db.save_account("bad", "kimi", "Bad", true, "env", "{\"type\":\"kimi\"}", None)
+        .unwrap();
+    db.save_account(
+        "good",
+        "kimi",
+        "Good",
+        true,
+        "env",
+        "{\"type\":\"kimi\"}",
+        Some(&[AlertRule {
+            tier_id: "five_hour".into(),
+            enabled: true,
+            threshold_percent: 50,
+        }]),
+    )
+    .unwrap();
+    db.save_account(
+        "bad",
+        "kimi",
+        "Bad",
+        true,
+        "env",
+        "{\"type\":\"kimi\"}",
+        Some(&[AlertRule {
+            tier_id: "five_hour".into(),
+            enabled: true,
+            threshold_percent: 50,
+        }]),
+    )
+    .unwrap();
+
+    let mk_tier = |id: &str, util: f64, unlimited: bool| TierDashboard {
+        quota: QuotaTier {
+            id: id.into(),
+            label: id.into(),
+            utilization: util,
+            resets_at: Some(99_999),
+            used: None,
+            limit: None,
+            unit: None,
+            unlimited,
+        },
+        forecast: TierForecast {
+            state: RiskState::Safe,
+            rate_per_hour: 1.0,
+            projected_utilization_at_reset: util,
+            exhaustion_at: None,
+            sample_count: 3,
+            observation_minutes: 20,
+        },
+    };
+
+    let mk_acc = |id: &str, name: &str, stale: bool, error: Option<&str>, tiers: Vec<TierDashboard>| {
+        AccountDashboard {
+            account: PublicAccount {
+                id: id.into(),
+                provider: ProviderKind::Kimi,
+                display_name: name.into(),
+                enabled: true,
+                credential_source: CredentialSource::Env,
+                has_credential: true,
+                config: ProviderConfig::Kimi,
+                alert_rules: vec![],
+            },
+            credential_status: CredentialStatus::Valid,
+            stale,
+            error: error.map(|s| s.to_string()),
+            tiers,
+        }
+    };
+
+    let snapshot = DashboardSnapshot {
+        accounts: vec![
+            mk_acc("good", "Good", false, None, vec![mk_tier("five_hour", 60.0, false)]),
+            mk_acc("bad", "Bad", false, Some("provider failed"), vec![mk_tier("five_hour", 90.0, false)]),
+        ],
+        leading_risk: RiskState::Safe,
+        refreshed_at: 1,
+        next_refresh_at: 2,
+        refresh_in_progress: false,
+    };
+
+    let sender = FakeSender {
+        calls: std::sync::Mutex::new(Vec::new()),
+        fail: false,
+    };
+    process_alerts(&db, &sender, &snapshot, 5).unwrap();
+    let calls = sender.calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].0.contains("Good"));
+    assert!(!calls[0].0.contains("Bad"));
+
+    // second pass same cycle -> no resend
+    process_alerts(&db, &sender, &snapshot, 5).unwrap();
+    assert_eq!(sender.calls.lock().unwrap().len(), 1);
+
+    // state persisted
+    let st = db.get_alert_state("good", "five_hour").unwrap().unwrap();
+    assert!(st.threshold_notified);
+
+    // rule change clears state
+    db.save_account(
+        "good",
+        "kimi",
+        "Good",
+        true,
+        "env",
+        "{\"type\":\"kimi\"}",
+        Some(&[AlertRule {
+            tier_id: "five_hour".into(),
+            enabled: true,
+            threshold_percent: 70,
+        }]),
+    )
+    .unwrap();
+    assert!(db.get_alert_state("good", "five_hour").unwrap().is_none());
+}

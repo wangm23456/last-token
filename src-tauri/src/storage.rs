@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
-use crate::domain::{Settings, HistoryPoint};
+use crate::domain::{AlertRule, Settings, HistoryPoint};
+use crate::alerts::AlertState;
 
 // ── SecretStore Trait & Implementations ───────────────────────────
 
@@ -126,6 +127,30 @@ impl Storage {
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('refresh_interval_minutes', '5');",
             [],
         )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS alert_rules (
+                account_id TEXT NOT NULL,
+                tier_id TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                threshold_percent INTEGER NOT NULL CHECK(threshold_percent BETWEEN 1 AND 99),
+                PRIMARY KEY(account_id, tier_id),
+                FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );",
+            [],
+        )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS alert_states (
+                account_id TEXT NOT NULL,
+                tier_id TEXT NOT NULL,
+                last_resets_at INTEGER,
+                last_utilization REAL NOT NULL,
+                threshold_notified INTEGER NOT NULL DEFAULT 0,
+                exhausted_notified INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(account_id, tier_id),
+                FOREIGN KEY(account_id, tier_id) REFERENCES alert_rules(account_id, tier_id) ON DELETE CASCADE
+            );",
+            [],
+        )?;
         // Migrate legacy keyring accounts to env-based source after keyring support was removed.
         conn.execute(
             "UPDATE OR IGNORE accounts SET credential_source = 'env' WHERE credential_source = 'keyring';",
@@ -177,12 +202,29 @@ impl Storage {
         Ok(())
     }
 
-    pub fn save_account(&self, id: &str, provider: &str, display_name: &str, enabled: bool, credential_source: &str, config_json: &str) -> Result<(), rusqlite::Error> {
+    pub fn save_account(
+        &self,
+        id: &str,
+        provider: &str,
+        display_name: &str,
+        enabled: bool,
+        credential_source: &str,
+        config_json: &str,
+        alert_rules: Option<&[AlertRule]>,
+    ) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock();
+        let tx = conn.unchecked_transaction()?;
         let now = chrono::Utc::now().timestamp_millis();
-        conn.execute(
-            "INSERT OR REPLACE INTO accounts (id, provider, display_name, enabled, credential_source, config_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM accounts WHERE id = ?), ?), ?)",
+        tx.execute(
+            "INSERT INTO accounts (id, provider, display_name, enabled, credential_source, config_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                provider = excluded.provider,
+                display_name = excluded.display_name,
+                enabled = excluded.enabled,
+                credential_source = excluded.credential_source,
+                config_json = excluded.config_json,
+                updated_at = excluded.updated_at",
             params![
                 id,
                 provider,
@@ -190,9 +232,140 @@ impl Storage {
                 if enabled { 1 } else { 0 },
                 credential_source,
                 config_json,
-                id,
                 now,
                 now
+            ],
+        )?;
+
+        if let Some(rules) = alert_rules {
+            // Load existing rules to detect enabled/threshold changes.
+            let mut existing: std::collections::HashMap<String, (bool, u8)> =
+                std::collections::HashMap::new();
+            {
+                let mut stmt = tx.prepare(
+                    "SELECT tier_id, enabled, threshold_percent FROM alert_rules WHERE account_id = ?",
+                )?;
+                let rows = stmt.query_map([id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i32>(1)? != 0,
+                        row.get::<_, i32>(2)? as u8,
+                    ))
+                })?;
+                for r in rows {
+                    let (tier_id, en, thr) = r?;
+                    existing.insert(tier_id, (en, thr));
+                }
+            }
+
+            let mut keep_ids = std::collections::HashSet::new();
+            for rule in rules {
+                let tier_id = rule.tier_id.trim();
+                keep_ids.insert(tier_id.to_string());
+
+                if let Some((old_enabled, old_threshold)) = existing.get(tier_id) {
+                    if *old_enabled != rule.enabled || *old_threshold != rule.threshold_percent {
+                        tx.execute(
+                            "DELETE FROM alert_states WHERE account_id = ? AND tier_id = ?",
+                            params![id, tier_id],
+                        )?;
+                    }
+                }
+
+                tx.execute(
+                    "INSERT INTO alert_rules (account_id, tier_id, enabled, threshold_percent)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(account_id, tier_id) DO UPDATE SET
+                        enabled = excluded.enabled,
+                        threshold_percent = excluded.threshold_percent",
+                    params![
+                        id,
+                        tier_id,
+                        if rule.enabled { 1 } else { 0 },
+                        rule.threshold_percent as i32
+                    ],
+                )?;
+            }
+
+            // Delete rules that were not submitted (cascades states).
+            let stale: Vec<String> = existing
+                .keys()
+                .filter(|k| !keep_ids.contains(*k))
+                .cloned()
+                .collect();
+            for tier_id in stale {
+                tx.execute(
+                    "DELETE FROM alert_rules WHERE account_id = ? AND tier_id = ?",
+                    params![id, tier_id],
+                )?;
+            }
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_alert_rules(&self, account_id: &str) -> Result<Vec<AlertRule>, rusqlite::Error> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT tier_id, enabled, threshold_percent FROM alert_rules WHERE account_id = ? ORDER BY tier_id",
+        )?;
+        let rows = stmt.query_map([account_id], |row| {
+            Ok(AlertRule {
+                tier_id: row.get(0)?,
+                enabled: row.get::<_, i32>(1)? != 0,
+                threshold_percent: row.get::<_, i32>(2)? as u8,
+            })
+        })?;
+        let mut results = Vec::new();
+        for r in rows {
+            results.push(r?);
+        }
+        Ok(results)
+    }
+
+    pub fn get_alert_state(
+        &self,
+        account_id: &str,
+        tier_id: &str,
+    ) -> Result<Option<AlertState>, rusqlite::Error> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT account_id, tier_id, last_resets_at, last_utilization, threshold_notified, exhausted_notified
+             FROM alert_states WHERE account_id = ? AND tier_id = ?",
+            params![account_id, tier_id],
+            |row| {
+                Ok(AlertState {
+                    account_id: row.get(0)?,
+                    tier_id: row.get(1)?,
+                    last_resets_at: row.get(2)?,
+                    last_utilization: row.get(3)?,
+                    threshold_notified: row.get::<_, i32>(4)? != 0,
+                    exhausted_notified: row.get::<_, i32>(5)? != 0,
+                })
+            },
+        )
+        .optional()
+    }
+
+    pub fn upsert_alert_state(&self, state: &AlertState) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO alert_states (
+                account_id, tier_id, last_resets_at, last_utilization, threshold_notified, exhausted_notified
+             ) VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(account_id, tier_id) DO UPDATE SET
+                last_resets_at = excluded.last_resets_at,
+                last_utilization = excluded.last_utilization,
+                threshold_notified = excluded.threshold_notified,
+                exhausted_notified = excluded.exhausted_notified",
+            params![
+                state.account_id,
+                state.tier_id,
+                state.last_resets_at,
+                state.last_utilization,
+                if state.threshold_notified { 1 } else { 0 },
+                if state.exhausted_notified { 1 } else { 0 },
             ],
         )?;
         Ok(())

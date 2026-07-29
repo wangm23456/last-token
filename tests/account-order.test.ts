@@ -37,6 +37,7 @@ function makeAcc(
     credentialSource: "env",
     hasCredential: true,
     config: { type: "claude" },
+    alertRules: [],
   };
   return {
     account,

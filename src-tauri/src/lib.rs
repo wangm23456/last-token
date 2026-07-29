@@ -2,6 +2,7 @@ pub mod domain;
 pub mod storage;
 pub mod providers;
 pub mod forecast;
+pub mod alerts;
 pub mod tray;
 pub mod env_secrets;
 
@@ -10,7 +11,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, Emitter};
 use parking_lot::Mutex;
 use crate::domain::{
-    apply_account_order, AccountDashboard, AccountInput, AppError, DashboardSnapshot, DeviceAuthStatus,
+    apply_account_order, validate_alert_rules, AccountDashboard, AccountInput, AppError, DashboardSnapshot, DeviceAuthStatus,
     ProviderConfig, ProviderKind, PublicAccount, RiskState, SecretPayload, Settings,
     TierDashboard, CredentialProbe, CredentialStatus, CredentialSource, QuotaTier,
 };
@@ -151,7 +152,22 @@ pub async fn refresh_all_action(app: &AppHandle) -> Result<DashboardSnapshot, Ap
     
     // Get updated snapshot
     let snapshot = get_dashboard_snapshot(app, false)?;
-    
+
+    let polling_interval_mins = state
+        .db
+        .get_settings()
+        .map(|s| s.refresh_interval_minutes)
+        .unwrap_or(5);
+    let sender = crate::alerts::TauriNotificationSender { app };
+    if let Err(e) = crate::alerts::process_alerts(
+        state.db.as_ref(),
+        &sender,
+        &snapshot,
+        polling_interval_mins,
+    ) {
+        eprintln!("process_alerts failed: {e}");
+    }
+
     // Update tray and notify UI
     let _ = crate::tray::update_tray_menu(app, &snapshot);
     let _ = app.emit("quota-updated", &snapshot);
@@ -223,6 +239,7 @@ fn get_dashboard_snapshot(app: &AppHandle, force_in_progress: bool) -> Result<Da
             (has_cred, status, None)
         };
 
+        let alert_rules = state.db.list_alert_rules(&id).unwrap_or_default();
         let public_acc = PublicAccount {
             id: id.clone(),
             provider,
@@ -231,6 +248,7 @@ fn get_dashboard_snapshot(app: &AppHandle, force_in_progress: bool) -> Result<Da
             credential_source: source,
             has_credential,
             config,
+            alert_rules,
         };
 
         // Determine if account status is stale / has query error
@@ -474,6 +492,7 @@ async fn list_accounts(app: AppHandle) -> Result<Vec<PublicAccount>, AppError> {
             }
         };
 
+        let alert_rules = state.db.list_alert_rules(&id).unwrap_or_default();
         list.push(PublicAccount {
             id,
             provider,
@@ -482,6 +501,7 @@ async fn list_accounts(app: AppHandle) -> Result<Vec<PublicAccount>, AppError> {
             credential_source: source,
             has_credential,
             config,
+            alert_rules,
         });
     }
 
@@ -583,6 +603,8 @@ async fn save_account(app: AppHandle, input: AccountInput) -> Result<PublicAccou
     let source_str = if account_id.starts_with("cli:") { "cli_auto" } else { "env" };
     let config_json = serde_json::to_string(&input.config).unwrap();
 
+    validate_alert_rules(&input.alert_rules)?;
+
     let sqlite_res = state.db.save_account(
         &account_id,
         &provider_str,
@@ -590,6 +612,7 @@ async fn save_account(app: AppHandle, input: AccountInput) -> Result<PublicAccou
         input.enabled,
         source_str,
         &config_json,
+        Some(input.alert_rules.as_slice()),
     );
 
     if let Err(db_err) = sqlite_res {
@@ -612,6 +635,7 @@ async fn save_account(app: AppHandle, input: AccountInput) -> Result<PublicAccou
         });
     }
 
+    let alert_rules = state.db.list_alert_rules(&account_id).unwrap_or_default();
     let public_acc = PublicAccount {
         id: account_id,
         provider: input.config.provider_kind(),
@@ -620,6 +644,7 @@ async fn save_account(app: AppHandle, input: AccountInput) -> Result<PublicAccou
         credential_source: if source_str == "cli_auto" { CredentialSource::CliAuto } else { CredentialSource::Env },
         has_credential: status == CredentialStatus::Valid,
         config: input.config,
+        alert_rules,
     };
 
     if let Ok(snap) = get_dashboard_snapshot(&app, false) {
@@ -712,6 +737,7 @@ async fn discover_env_accounts(app: AppHandle) -> Result<Vec<PublicAccount>, App
             config,
             secret: None,
             remove_credential: None,
+            alert_rules: vec![],
         };
         if let Ok(acc) = save_account(app.clone(), input).await {
             created.push(acc);
@@ -781,6 +807,7 @@ async fn probe_cli_credentials(app: AppHandle) -> Result<Vec<CredentialProbe>, A
                     true,
                     "cli_auto",
                     &config_json,
+                    None,
                 );
             }
         }
@@ -992,7 +1019,7 @@ async fn poll_copilot_device_flow(
     // Save in SQLite
     let provider_str = "copilot";
     let config_json = serde_json::to_string(&config).unwrap();
-    state.db.save_account(&account_id, provider_str, &display_name, true, "env", &config_json).map_err(|e| {
+    state.db.save_account(&account_id, provider_str, &display_name, true, "env", &config_json, None).map_err(|e| {
         let _ = state.secret_store.delete_secret(&account_id, "github_token");
         AppError::new("database_error", e.to_string(), false)
     })?;
@@ -1003,6 +1030,7 @@ async fn poll_copilot_device_flow(
         let _ = refresh_all_action(&app_clone).await;
     });
 
+    let alert_rules = state.db.list_alert_rules(&account_id).unwrap_or_default();
     let public_acc = PublicAccount {
         id: account_id,
         provider: ProviderKind::Copilot,
@@ -1011,6 +1039,7 @@ async fn poll_copilot_device_flow(
         credential_source: CredentialSource::Env,
         has_credential: true,
         config,
+        alert_rules,
     };
 
     if let Ok(snap) = get_dashboard_snapshot(&app, false) {
@@ -1103,6 +1132,12 @@ impl ProviderKind {
 // ── Run Entry Point ──────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command]
+async fn request_notification_permission(app: AppHandle) -> Result<bool, AppError> {
+    crate::alerts::request_permission_granted(&app)
+}
+
+
 pub fn run() {
     // CrabNebula DevTools — debug builds only, captures setup/IPC/panic logs
     // so silent failures (e.g. main window not surfacing) are diagnosable.
@@ -1116,6 +1151,7 @@ pub fn run() {
         builder = builder.plugin(devtools);
     }
     builder = builder.plugin(tauri_plugin_opener::init());
+    builder = builder.plugin(tauri_plugin_notification::init());
     builder
         .setup(|app| {
             // Menu-bar app: no Dock icon, lives in the system tray.
@@ -1203,7 +1239,8 @@ pub fn run() {
             get_settings,
             update_settings,
             update_account_order,
-            clear_history
+            clear_history,
+            request_notification_permission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

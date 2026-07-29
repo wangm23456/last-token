@@ -18,6 +18,8 @@ export default defineConfig(async ({ mode }) => {
       environment: "jsdom",
       globals: true,
       setupFiles: ["./tests/setup.ts"],
+      include: ["tests/**/*.{test,spec}.{ts,tsx}"],
+      exclude: ["**/node_modules/**", "**/dist/**", "**/.agents/**"],
     },
   };
 });

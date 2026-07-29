@@ -7,6 +7,7 @@ import {
   Settings,
   DeviceAuthStatus,
   AccountDashboard,
+  ProviderKind,
 } from "@/types";
 import { applyAccountOrder } from "@/lib/accountOrder";
 
@@ -34,6 +35,7 @@ let mockAccounts: PublicAccount[] = [
     credentialSource: "cli_auto",
     hasCredential: true,
     config: { type: "claude" },
+    alertRules: [],
   },
   {
     id: "gemini:1",
@@ -43,6 +45,7 @@ let mockAccounts: PublicAccount[] = [
     credentialSource: "env",
     hasCredential: true,
     config: { type: "gemini" },
+    alertRules: [],
   },
   {
     id: "kimi:1",
@@ -52,6 +55,7 @@ let mockAccounts: PublicAccount[] = [
     credentialSource: "env",
     hasCredential: true,
     config: { type: "kimi" },
+    alertRules: [],
   },
   {
     id: "codex:1",
@@ -61,6 +65,7 @@ let mockAccounts: PublicAccount[] = [
     credentialSource: "env",
     hasCredential: true,
     config: { type: "codex" },
+    alertRules: [],
   },
   {
     id: "minimax:1",
@@ -70,6 +75,7 @@ let mockAccounts: PublicAccount[] = [
     credentialSource: "env",
     hasCredential: true,
     config: { type: "minimax", region: "cn" },
+    alertRules: [],
   },
   {
     id: "copilot:1",
@@ -79,6 +85,7 @@ let mockAccounts: PublicAccount[] = [
     credentialSource: "env",
     hasCredential: true,
     config: { type: "copilot", githubDomain: null },
+    alertRules: [],
   },
   {
     id: "volcengine:1",
@@ -88,6 +95,7 @@ let mockAccounts: PublicAccount[] = [
     credentialSource: "env",
     hasCredential: false,
     config: { type: "volcengine", region: "cn-beijing" },
+    alertRules: [],
   },
 ];
 
@@ -430,7 +438,9 @@ export async function listAccounts(): Promise<PublicAccount[]> {
 export async function saveAccount(input: AccountInput): Promise<PublicAccount> {
   const isNew = !input.id;
   const accountId = input.id || `manual:${input.config.type}:${Math.random().toString(36).substr(2, 9)}`;
-  
+  const existing = isNew ? undefined : mockAccounts.find((a) => a.id === accountId);
+  const alertRules = input.alertRules ?? existing?.alertRules ?? [];
+
   const acc: PublicAccount = {
     id: accountId,
     provider: input.config.type as ProviderKind,
@@ -439,6 +449,7 @@ export async function saveAccount(input: AccountInput): Promise<PublicAccount> {
     credentialSource: "env",
     hasCredential: input.secret ? true : !isNew,
     config: input.config,
+    alertRules: [...alertRules],
   };
 
   if (isNew) {
@@ -448,6 +459,10 @@ export async function saveAccount(input: AccountInput): Promise<PublicAccount> {
   }
 
   return acc;
+}
+
+export async function requestNotificationPermission(): Promise<boolean> {
+  return true;
 }
 
 export async function deleteAccount(accountId: string): Promise<void> {
@@ -506,8 +521,8 @@ export async function pollCopilotDeviceFlow(
     credentialSource: "env",
     hasCredential: true,
     config: { type: "copilot", githubDomain },
+    alertRules: [],
   };
-
   mockAccounts.push(newAccount);
 
   return { type: "authorized", account: newAccount };
@@ -545,6 +560,7 @@ export async function discoverEnvAccounts(): Promise<PublicAccount[]> {
       credentialSource: "env",
       hasCredential: true,
       config: { type: "kimi" },
+      alertRules: [],
     },
   ];
   const existing = mockAccounts.map((a) => a.id);

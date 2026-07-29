@@ -36,6 +36,7 @@ const geminiProAccount: PublicAccount = {
   credentialSource: "env",
   hasCredential: true,
   config: { type: "gemini" },
+  alertRules: [],
 };
 
 const claudeAccount: PublicAccount = {
@@ -46,6 +47,7 @@ const claudeAccount: PublicAccount = {
   credentialSource: "cli_auto",
   hasCredential: true,
   config: { type: "claude" },
+  alertRules: [],
 };
 
 const volcengineAccount: PublicAccount = {
@@ -56,6 +58,7 @@ const volcengineAccount: PublicAccount = {
   credentialSource: "env",
   hasCredential: false,
   config: { type: "volcengine", region: "cn-beijing" },
+  alertRules: [],
 };
 
 const copilotAccount: PublicAccount = {
@@ -66,6 +69,7 @@ const copilotAccount: PublicAccount = {
   credentialSource: "env",
   hasCredential: true,
   config: { type: "copilot", githubDomain: null },
+  alertRules: [],
 };
 
 const fiveHourClaude: TierDashboard = {

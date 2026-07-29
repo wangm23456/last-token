@@ -1,5 +1,31 @@
 use crate::domain::{RiskState, TierForecast, HistoryPoint};
 
+/// Shared cycle-break predicate for forecast segmentation and alert re-arming.
+/// `None ↔ Some` alone is NOT a new cycle; without a stable reset time, a
+/// utilization drop >2 percentage points still counts as a break.
+pub fn is_quota_cycle_break(
+    previous_utilization: f64,
+    previous_resets_at: Option<i64>,
+    current_utilization: f64,
+    current_resets_at: Option<i64>,
+    polling_interval_mins: i64,
+) -> bool {
+    let drop = previous_utilization - current_utilization;
+    if drop > 2.0 {
+        return true;
+    }
+
+    if let (Some(prev_r), Some(curr_r)) = (previous_resets_at, current_resets_at) {
+        let diff_ms = (prev_r - curr_r).abs();
+        let threshold_ms = polling_interval_mins * 2 * 60 * 1000;
+        if diff_ms > threshold_ms {
+            return true;
+        }
+    }
+
+    false
+}
+
 pub fn compute_forecast(
     unlimited: bool,
     current_utilization: f64,
@@ -28,7 +54,11 @@ pub fn compute_forecast(
             projected_utilization_at_reset: 100.0,
             exhaustion_at: Some(now_ms), // exhaustion is now
             sample_count: snapshots.len(),
-            observation_minutes: if snapshots.is_empty() { 0 } else { (snapshots.last().unwrap().sampled_at - snapshots.first().unwrap().sampled_at) / 60000 },
+            observation_minutes: if snapshots.is_empty() {
+                0
+            } else {
+                (snapshots.last().unwrap().sampled_at - snapshots.first().unwrap().sampled_at) / 60000
+            },
         };
     }
 
@@ -42,7 +72,12 @@ pub fn compute_forecast(
                 projected_utilization_at_reset: current_utilization,
                 exhaustion_at: None,
                 sample_count: snapshots.len(),
-                observation_minutes: if snapshots.is_empty() { 0 } else { (snapshots.last().unwrap().sampled_at - snapshots.first().unwrap().sampled_at) / 60000 },
+                observation_minutes: if snapshots.is_empty() {
+                    0
+                } else {
+                    (snapshots.last().unwrap().sampled_at - snapshots.first().unwrap().sampled_at)
+                        / 60000
+                },
             };
         }
     };
@@ -61,28 +96,22 @@ pub fn compute_forecast(
         for i in (1..relevant_snapshots.len()).rev() {
             let prev = relevant_snapshots[i - 1];
             let curr = relevant_snapshots[i];
-            
-            // Check drop in utilization > 2%
-            let drop = prev.utilization - curr.utilization;
-            if drop > 2.0 {
+
+            if is_quota_cycle_break(
+                prev.utilization,
+                prev.resets_at,
+                curr.utilization,
+                curr.resets_at,
+                polling_interval_mins,
+            ) {
                 break_index = i;
                 break;
-            }
-            
-            // Check resetsAt difference > 2 * polling_interval_mins
-            if let (Some(prev_r), Some(curr_r)) = (prev.resets_at, curr.resets_at) {
-                let diff_ms = (prev_r - curr_r).abs();
-                let threshold_ms = polling_interval_mins * 2 * 60 * 1000;
-                if diff_ms > threshold_ms {
-                    break_index = i;
-                    break;
-                }
             }
         }
     }
 
     let segment = &relevant_snapshots[break_index..];
-    
+
     // Check requirements: at least 3 samples spanning at least 15 minutes
     if segment.len() < 3 {
         return TierForecast {
@@ -91,10 +120,14 @@ pub fn compute_forecast(
             projected_utilization_at_reset: current_utilization,
             exhaustion_at: None,
             sample_count: segment.len(),
-            observation_minutes: if segment.is_empty() { 0 } else { (segment.last().unwrap().sampled_at - segment.first().unwrap().sampled_at) / 60000 },
+            observation_minutes: if segment.is_empty() {
+                0
+            } else {
+                (segment.last().unwrap().sampled_at - segment.first().unwrap().sampled_at) / 60000
+            },
         };
     }
-    
+
     let span_ms = segment.last().unwrap().sampled_at - segment.first().unwrap().sampled_at;
     if span_ms < 15 * 60 * 1000 {
         return TierForecast {
@@ -135,8 +168,14 @@ pub fn compute_forecast(
     let mut rate_per_hour = slope.max(0.0);
 
     // If the observed range is below 1 percentage point or the fitted slope is at most 0.05%/hour, treat pace as zero
-    let min_y = segment.iter().map(|s| s.utilization).fold(f64::INFINITY, f64::min);
-    let max_y = segment.iter().map(|s| s.utilization).fold(f64::NEG_INFINITY, f64::max);
+    let min_y = segment
+        .iter()
+        .map(|s| s.utilization)
+        .fold(f64::INFINITY, f64::min);
+    let max_y = segment
+        .iter()
+        .map(|s| s.utilization)
+        .fold(f64::NEG_INFINITY, f64::max);
     let range_y = max_y - min_y;
 
     if range_y < 1.0 || rate_per_hour <= 0.05 {
@@ -158,8 +197,9 @@ pub fn compute_forecast(
 
     // Calculations
     let hours_to_reset = (resets_at_val - now_ms) as f64 / 3600000.0;
-    let projected_utilization_at_reset = (current_utilization + rate_per_hour * hours_to_reset).min(100.0);
-    
+    let projected_utilization_at_reset =
+        (current_utilization + rate_per_hour * hours_to_reset).min(100.0);
+
     let hours_to_exhaustion = (100.0 - current_utilization) / rate_per_hour;
     let exhaustion_at = now_ms + (hours_to_exhaustion * 3600000.0).round() as i64;
 

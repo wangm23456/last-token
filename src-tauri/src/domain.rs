@@ -219,6 +219,14 @@ pub struct HistoryPoint {
     pub resets_at: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertRule {
+    pub tier_id: String,
+    pub enabled: bool,
+    pub threshold_percent: u8,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicAccount {
@@ -229,6 +237,7 @@ pub struct PublicAccount {
     pub credential_source: CredentialSource,
     pub has_credential: bool,
     pub config: ProviderConfig,
+    pub alert_rules: Vec<AlertRule>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,6 +318,41 @@ pub struct AccountInput {
     pub config: ProviderConfig,
     pub secret: Option<SecretPayload>,
     pub remove_credential: Option<bool>,
+    #[serde(default)]
+    pub alert_rules: Vec<AlertRule>,
+}
+
+/// Validate alert rules submitted by the UI.
+pub fn validate_alert_rules(rules: &[AlertRule]) -> Result<(), AppError> {
+    let mut seen = std::collections::HashSet::new();
+    for rule in rules {
+        let tier_id = rule.tier_id.trim();
+        if tier_id.is_empty() {
+            return Err(AppError::new(
+                "validation_error",
+                "alertRules.tierId must be a non-empty string",
+                false,
+            ));
+        }
+        if !seen.insert(tier_id.to_string()) {
+            return Err(AppError::new(
+                "validation_error",
+                format!("alertRules.tierId '{tier_id}' is duplicated in the same submit"),
+                false,
+            ));
+        }
+        if !(1..=99).contains(&rule.threshold_percent) {
+            return Err(AppError::new(
+                "validation_error",
+                format!(
+                    "alertRules.thresholdPercent must be an integer between 1 and 99 (got {})",
+                    rule.threshold_percent
+                ),
+                false,
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
