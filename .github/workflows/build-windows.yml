@@ -11,9 +11,8 @@ on:
 
 jobs:
   draft:
-    runs-on: ubuntu-22.04
     outputs:
-      release_id: ${{ steps.draft.outputs.release_id }}
+      release_id: ${{ steps.cn_id.outputs.release_id }}
       has_cn: ${{ steps.check_cn.outputs.has_cn }}
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +34,18 @@ jobs:
         with:
           command: release draft ${{ secrets.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
+      - name: Extract CrabNebula release id
+        if: steps.check_cn.outputs.has_cn == 'true'
+        id: cn_id
+        env:
+          CN_DRAFT_STDOUT: ${{ steps.draft.outputs.stdout }}
+        run: |
+          id=$(echo "$CN_DRAFT_STDOUT" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -n1)
+          if [ -n "$id" ]; then
+            echo "release_id=$id" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Could not parse release id from cn CLI output"
+          fi
 
   build:
     needs: draft
@@ -82,7 +93,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Last Token v__VERSION__'
           releaseBody: 'Release assets built via CI.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
