@@ -264,4 +264,27 @@ describe("TrayPanel", () => {
       expect(getDashboard.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
+
+  it("renders accounts in the dashboard order from the backend", async () => {
+    // Tray trusts dashboard.accounts (already ordered by backend/settings).
+    // Put Copilot first; risk sort would otherwise put at-risk Claude first.
+    const orderedSnapshot: DashboardSnapshot = {
+      ...baseSnapshot,
+      accounts: [
+        accounts.find((a) => a.account.id === "copilot-1")!,
+        accounts.find((a) => a.account.id === "claude-1")!,
+        accounts.find((a) => a.account.id === "volcengine-1")!,
+      ],
+    };
+    vi.mocked(getDashboard).mockResolvedValue(orderedSnapshot);
+    vi.mocked(refreshAll).mockResolvedValue(orderedSnapshot);
+
+    renderWithProviders(<TrayPanel />);
+
+    const copilot = await screen.findByText("Copilot Business");
+    const claude = screen.getByText("Claude Pro");
+    expect(
+      copilot.compareDocumentPosition(claude) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 });

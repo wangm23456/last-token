@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, Emitter};
 use parking_lot::Mutex;
 use crate::domain::{
-    AccountDashboard, AccountInput, AppError, DashboardSnapshot, DeviceAuthStatus,
+    apply_account_order, AccountDashboard, AccountInput, AppError, DashboardSnapshot, DeviceAuthStatus,
     ProviderConfig, ProviderKind, PublicAccount, RiskState, SecretPayload, Settings,
     TierDashboard, CredentialProbe, CredentialStatus, CredentialSource, QuotaTier,
 };
@@ -340,6 +340,8 @@ fn get_dashboard_snapshot(app: &AppHandle, force_in_progress: bool) -> Result<Da
     }
 
     let refresh_in_progress = force_in_progress || state.refresh_in_progress.load(std::sync::atomic::Ordering::SeqCst);
+
+    let accounts = apply_account_order(&accounts, &settings.account_order);
 
     Ok(DashboardSnapshot {
         accounts,
@@ -1038,6 +1040,10 @@ async fn update_settings(app: AppHandle, input: Settings) -> Result<(), AppError
     state.db.update_settings(input.refresh_interval_minutes).map_err(|e| {
         AppError::new("database_error", e.to_string(), false)
     })?;
+    // Persist overview card order when provided via settings update.
+    state.db.update_account_order(&input.account_order).map_err(|e| {
+        AppError::new("database_error", e.to_string(), false)
+    })?;
     // settings changes wake the scheduler so the next sleep is
     // re-evaluated against the new interval instead of waiting out the
     // old one, and we kick off a refresh so the new cadence is observed
@@ -1045,6 +1051,20 @@ async fn update_settings(app: AppHandle, input: Settings) -> Result<(), AppError
     state.scheduler_wake.notify_one();
     let _ = refresh_all_action(&app).await;
 
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_account_order(app: AppHandle, order: Vec<String>) -> Result<(), AppError> {
+    let state = app.state::<AppState>();
+    state.db.update_account_order(&order).map_err(|e| {
+        AppError::new("database_error", e.to_string(), false)
+    })?;
+    // Rebuild native tray menu immediately so right-click order matches overview.
+    if let Ok(snap) = get_dashboard_snapshot(&app, false) {
+        let _ = crate::tray::update_tray_menu(&app, &snap);
+        let _ = app.emit("quota-updated", &snap);
+    }
     Ok(())
 }
 
@@ -1182,6 +1202,7 @@ pub fn run() {
             poll_copilot_device_flow,
             get_settings,
             update_settings,
+            update_account_order,
             clear_history
         ])
         .run(tauri::generate_context!())

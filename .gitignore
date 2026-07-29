@@ -1,5 +1,6 @@
 .codegraph/daemon.*
 .vscode/
+assets_backup/
 
 # Logs
 logs

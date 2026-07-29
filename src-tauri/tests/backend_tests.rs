@@ -408,11 +408,26 @@ fn test_storage_and_secrets() {
     // Verify settings default
     let settings = storage.get_settings().unwrap();
     assert_eq!(settings.refresh_interval_minutes, 5);
+    assert!(settings.account_order.is_empty());
 
     // Save settings
     storage.update_settings(15).unwrap();
     let settings_new = storage.get_settings().unwrap();
     assert_eq!(settings_new.refresh_interval_minutes, 15);
+    assert!(settings_new.account_order.is_empty());
+
+    // Save account order independently
+    storage
+        .update_account_order(&vec!["b".into(), "a".into()])
+        .unwrap();
+    let settings_ordered = storage.get_settings().unwrap();
+    assert_eq!(settings_ordered.refresh_interval_minutes, 15);
+    assert_eq!(
+        settings_ordered.account_order,
+        vec!["b".to_string(), "a".to_string()]
+    );
+    storage.update_account_order(&[]).unwrap();
+    assert!(storage.get_settings().unwrap().account_order.is_empty());
 
     // Save account & secrets
     let account_id = "test-account";
@@ -592,6 +607,73 @@ fn test_leading_tier_selects_worst_with_tie_breaks() {
     let tiers = vec![at_risk_a, at_risk_b];
     let worst = leading_tier(&tiers).unwrap();
     assert_eq!(worst.quota.utilization, 90.0);
+}
+
+#[test]
+fn test_apply_account_order_manual_and_risk_fallback() {
+    use last_token_lib::domain::{
+        apply_account_order, sort_accounts_by_risk, AccountDashboard, CredentialSource,
+        CredentialStatus, ProviderConfig, ProviderKind, PublicAccount, QuotaTier, RiskState,
+        TierDashboard, TierForecast,
+    };
+
+    let make_acc = |id: &str, state: RiskState, exhaustion_at: Option<i64>| AccountDashboard {
+        account: PublicAccount {
+            id: id.into(),
+            provider: ProviderKind::Claude,
+            display_name: id.into(),
+            enabled: true,
+            credential_source: CredentialSource::Env,
+            has_credential: true,
+            config: ProviderConfig::Claude,
+        },
+        credential_status: CredentialStatus::Valid,
+        stale: false,
+        error: None,
+        tiers: vec![TierDashboard {
+            quota: QuotaTier {
+                id: "five_hour".into(),
+                label: "5h".into(),
+                utilization: 50.0,
+                resets_at: None,
+                used: None,
+                limit: None,
+                unit: None,
+                unlimited: false,
+            },
+            forecast: TierForecast {
+                state,
+                rate_per_hour: 1.0,
+                projected_utilization_at_reset: 50.0,
+                exhaustion_at,
+                sample_count: 2,
+                observation_minutes: 30,
+            },
+        }],
+    };
+
+    let safe = make_acc("safe", RiskState::Safe, None);
+    let at_risk = make_acc("risk", RiskState::AtRisk, Some(1_000));
+    let exhausted = make_acc("ex", RiskState::Exhausted, Some(500));
+    let accounts = vec![safe.clone(), at_risk.clone(), exhausted.clone()];
+
+    let by_risk = sort_accounts_by_risk(&accounts);
+    assert_eq!(
+        by_risk.iter().map(|a| a.account.id.as_str()).collect::<Vec<_>>(),
+        vec!["ex", "risk", "safe"]
+    );
+
+    let manual = apply_account_order(&accounts, &vec!["safe".into(), "ex".into()]);
+    assert_eq!(
+        manual.iter().map(|a| a.account.id.as_str()).collect::<Vec<_>>(),
+        vec!["safe", "ex", "risk"]
+    );
+
+    let empty = apply_account_order(&accounts, &[]);
+    assert_eq!(
+        empty.iter().map(|a| a.account.id.as_str()).collect::<Vec<_>>(),
+        vec!["ex", "risk", "safe"]
+    );
 }
 
 // ── Tray Pure Tests ──────────────────────────────────────────────

@@ -142,8 +142,18 @@ impl Storage {
             |row| row.get(0),
         )?;
         let minutes: i64 = val.parse().unwrap_or(5);
+        let account_order = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'account_order'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+            .unwrap_or_default();
         Ok(Settings {
             refresh_interval_minutes: minutes,
+            account_order,
         })
     }
 
@@ -152,6 +162,17 @@ impl Storage {
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('refresh_interval_minutes', ?)",
             [minutes.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_account_order(&self, order: &[String]) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock();
+        // Vec<String> always serializes; fall back to empty array on unexpected failure.
+        let value = serde_json::to_string(order).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('account_order', ?)",
+            [value],
         )?;
         Ok(())
     }

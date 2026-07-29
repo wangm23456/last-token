@@ -75,6 +75,7 @@ export function SettingsTab() {
     }
     updateSettingsMutation.mutate({
       refreshIntervalMinutes: mins,
+      accountOrder: settings.accountOrder ?? [],
     });
   };
 

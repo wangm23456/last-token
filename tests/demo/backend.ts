@@ -8,6 +8,7 @@ import {
   DeviceAuthStatus,
   AccountDashboard,
 } from "@/types";
+import { applyAccountOrder } from "@/lib/accountOrder";
 
 export interface DeviceFlowStartResult {
   deviceCode: string;
@@ -21,6 +22,7 @@ export interface DeviceFlowStartResult {
 
 let mockSettings: Settings = {
   refreshIntervalMinutes: 5,
+  accountOrder: [],
 };
 
 let mockAccounts: PublicAccount[] = [
@@ -387,10 +389,10 @@ export async function getDashboard(): Promise<DashboardSnapshot> {
     }
   }
 
-  return {
-    accounts,
+    return {
+    accounts: applyAccountOrder(accounts, mockSettings.accountOrder),
     leadingRisk,
-    refreshedAt: now - 30 * 1000,
+    refreshedAt: now,
     nextRefreshAt: now + mockSettings.refreshIntervalMinutes * 60 * 1000,
     refreshInProgress: false,
   };
@@ -516,7 +518,14 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(input: Settings): Promise<void> {
-  mockSettings = { ...input };
+  mockSettings = {
+    refreshIntervalMinutes: input.refreshIntervalMinutes,
+    accountOrder: input.accountOrder ?? mockSettings.accountOrder,
+  };
+}
+
+export async function updateAccountOrder(order: string[]): Promise<void> {
+  mockSettings = { ...mockSettings, accountOrder: [...order] };
 }
 
 export async function clearHistory(): Promise<void> {

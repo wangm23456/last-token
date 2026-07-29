@@ -109,6 +109,67 @@ pub fn leading_tier<'a>(tiers: &'a [TierDashboard]) -> Option<&'a TierDashboard>
     })
 }
 
+fn account_risk_severity(acc: &AccountDashboard) -> f64 {
+    if acc.credential_status != CredentialStatus::Valid || acc.error.is_some() {
+        // Account-level error: between unknown_reset and at_risk.
+        return f64::from(risk_severity(RiskState::UnknownReset)) + 0.5;
+    }
+    match leading_tier(&acc.tiers) {
+        Some(tier) => f64::from(risk_severity(tier.forecast.state)),
+        None => f64::from(risk_severity(RiskState::Safe)),
+    }
+}
+
+fn account_earliest_time(acc: &AccountDashboard) -> i64 {
+    let mut min = i64::MAX;
+    for tier in &acc.tiers {
+        if let Some(t) = tier.forecast.exhaustion_at.or(tier.quota.resets_at) {
+            if t < min {
+                min = t;
+            }
+        }
+    }
+    min
+}
+
+/// Higher severity first; same severity uses earliest exhaustion/reset.
+pub fn sort_accounts_by_risk(accounts: &[AccountDashboard]) -> Vec<AccountDashboard> {
+    let mut ordered = accounts.to_vec();
+    ordered.sort_by(|a, b| {
+        let sev = account_risk_severity(b)
+            .partial_cmp(&account_risk_severity(a))
+            .unwrap_or(std::cmp::Ordering::Equal);
+        sev.then_with(|| account_earliest_time(a).cmp(&account_earliest_time(b)))
+    });
+    ordered
+}
+
+/// Manual order wins when present; otherwise sort by risk severity.
+/// Unknown/new ids not in `order` are appended in risk order.
+pub fn apply_account_order(accounts: &[AccountDashboard], order: &[String]) -> Vec<AccountDashboard> {
+    let by_risk = sort_accounts_by_risk(accounts);
+    if order.is_empty() {
+        return by_risk;
+    }
+
+    let mut remaining: std::collections::HashMap<String, AccountDashboard> = accounts
+        .iter()
+        .map(|acc| (acc.account.id.clone(), acc.clone()))
+        .collect();
+    let mut ordered = Vec::with_capacity(accounts.len());
+    for id in order {
+        if let Some(acc) = remaining.remove(id) {
+            ordered.push(acc);
+        }
+    }
+    for acc in by_risk {
+        if remaining.remove(&acc.account.id).is_some() {
+            ordered.push(acc);
+        }
+    }
+    ordered
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaTier {
@@ -294,6 +355,9 @@ pub struct CredentialProbe {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub refresh_interval_minutes: i64,
+    /// Manual overview card order. Empty means sort by risk severity.
+    #[serde(default)]
+    pub account_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

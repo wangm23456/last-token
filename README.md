@@ -97,8 +97,8 @@ bun run tauri build
 当你需要发布新版本时，只需在本地打标签并推送：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 GitHub Actions 将自动触发多平台矩阵构建（macOS, Windows, Linux），并上传产物至 GitHub Releases 及 CrabNebula CDN。

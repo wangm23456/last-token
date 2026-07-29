@@ -118,6 +118,8 @@ export interface AccountInput {
 
 export interface Settings {
   refreshIntervalMinutes: number;
+  /** Manual overview card order. Empty means sort by risk severity. */
+  accountOrder: string[];
 }
 
 export interface CredentialProbe {

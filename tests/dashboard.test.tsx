@@ -1,5 +1,5 @@
 import * as React from "react";
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,9 +17,14 @@ vi.mock("@/lib/backend", () => ({
   refreshAll: vi.fn(),
   getTierHistory: vi.fn(),
   openMainWindow: vi.fn(),
+  getSettings: vi.fn(async () => ({
+    refreshIntervalMinutes: 5,
+    accountOrder: [],
+  })),
+  updateAccountOrder: vi.fn(async () => undefined),
 }));
 
-import { getDashboard, refreshAll, getTierHistory } from "@/lib/backend";
+import { getDashboard, refreshAll, getTierHistory, getSettings, updateAccountOrder } from "@/lib/backend";
 
 const NOW = Date.now();
 
@@ -234,6 +239,14 @@ function renderWithProviders(ui: React.ReactNode) {
 }
 
 describe("OverviewTab", () => {
+  beforeEach(() => {
+    vi.mocked(getSettings).mockResolvedValue({
+      refreshIntervalMinutes: 5,
+      accountOrder: [],
+    });
+    vi.mocked(updateAccountOrder).mockClear();
+  });
+
   it("renders dashboard with RiskHero and sorted accounts", async () => {
     vi.mocked(getDashboard).mockResolvedValue(mockDashboard);
     vi.mocked(refreshAll).mockResolvedValue(mockDashboard);
@@ -261,6 +274,40 @@ describe("OverviewTab", () => {
     const claudeIdx = allCards.findIndex((el) => el.textContent === "Claude");
     const geminiIdx = allCards.findIndex((el) => el.textContent === "Gemini Pro");
     expect(claudeIdx).toBeLessThan(geminiIdx);
+  });
+
+  it("respects persisted manual account order and can reset to risk sort", async () => {
+    vi.mocked(getDashboard).mockResolvedValue(mockDashboard);
+    vi.mocked(refreshAll).mockResolvedValue(mockDashboard);
+    vi.mocked(getTierHistory).mockResolvedValue(mockHistory);
+    vi.mocked(getSettings).mockResolvedValue({
+      refreshIntervalMinutes: 5,
+      // Put safe Gemini ahead of at-risk Claude
+      accountOrder: ["safe-acc", "at-risk-acc", "cred-error-acc", "copilot-acc"],
+    });
+
+    renderWithProviders(
+      <OverviewTab
+        onNavigateToProviders={() => {}}
+        onNavigateToSettings={() => {}}
+      />,
+    );
+
+    const geminiCard = await screen.findByRole("button", {
+      name: "拖动排序 Gemini Pro",
+    });
+    const claudeCard = screen.getByRole("button", { name: "拖动排序 Claude" });
+    expect(
+      geminiCard.compareDocumentPosition(claudeCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const reset = await screen.findByRole("button", { name: "恢复风险排序" });
+    expect(reset).toBeEnabled();
+    reset.click();
+    await waitFor(() => {
+      expect(vi.mocked(updateAccountOrder)).toHaveBeenCalled();
+    });
+    expect(vi.mocked(updateAccountOrder).mock.calls.at(-1)?.[0]).toEqual([]);
   });
 
   it("shows every tier per account, including absolute and unlimited", async () => {

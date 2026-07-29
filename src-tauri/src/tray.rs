@@ -5,7 +5,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, PhysicalPosition, Rect, WebviewUrl, WebviewWindowBuilder,
 };
-use crate::domain::{leading_tier, risk_severity, DashboardSnapshot, RiskState, ProviderKind, CredentialStatus};
+use crate::domain::{apply_account_order, leading_tier, risk_severity, DashboardSnapshot, RiskState, ProviderKind, CredentialStatus};
 use crate::AppState;
 
 pub const TRAY_ID: &str = "last-token-tray";
@@ -14,6 +14,8 @@ pub const TRAY_PANEL_LABEL: &str = "tray-panel";
 pub struct TrayState {
     pub global_item: MenuItem<tauri::Wry>,
     pub account_items: HashMap<String, MenuItem<tauri::Wry>>,
+    /// Enabled account ids in the currently rendered menu order.
+    pub ordered_account_ids: Vec<String>,
     pub refresh_item: MenuItem<tauri::Wry>,
 }
 
@@ -304,6 +306,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), tauri::Error> {
     *ts = Some(TrayState {
         global_item,
         account_items: HashMap::new(),
+        ordered_account_ids: Vec::new(),
         refresh_item,
     });
 
@@ -312,20 +315,26 @@ pub fn create_tray(app: &AppHandle) -> Result<(), tauri::Error> {
 
 pub fn update_tray_menu(app: &AppHandle, snapshot: &DashboardSnapshot) -> Result<(), tauri::Error> {
     let app_state = app.state::<AppState>();
-    
-    // Check if we need to rebuild the menu hierarchy because the list of accounts changed.
+
+    // Align native tray rows with overview/tray-panel order.
+    let account_order = app_state
+        .db
+        .get_settings()
+        .map(|s| s.account_order)
+        .unwrap_or_default();
+    let ordered_accounts = apply_account_order(&snapshot.accounts, &account_order);
+    let ordered_enabled_ids: Vec<String> = ordered_accounts
+        .iter()
+        .filter(|a| a.account.enabled)
+        .map(|a| a.account.id.clone())
+        .collect();
+
+    // Rebuild when membership OR display order changes.
     let rebuild_needed = {
         let ts_guard = app_state.tray_state.lock();
-        if let Some(ref ts) = *ts_guard {
-            let cached_keys: std::collections::HashSet<&String> = ts.account_items.keys().collect();
-            let snapshot_keys: std::collections::HashSet<String> = snapshot.accounts.iter()
-                .filter(|a| a.account.enabled)
-                .map(|a| a.account.id.clone())
-                .collect();
-            
-            cached_keys.len() != snapshot_keys.len() || !cached_keys.iter().all(|k| snapshot_keys.contains(*k))
-        } else {
-            true
+        match &*ts_guard {
+            Some(ts) => ts.ordered_account_ids != ordered_enabled_ids,
+            None => true,
         }
     };
 
@@ -339,14 +348,15 @@ pub fn update_tray_menu(app: &AppHandle, snapshot: &DashboardSnapshot) -> Result
         menu_items.push(Box::new(global_item.clone()));
         menu_items.push(Box::new(sep1));
         
-        // Add row for each enabled account
-        for acc in &snapshot.accounts {
-            if acc.account.enabled {
-                let id = format!("acc_row_{}", acc.account.id);
-                let item = MenuItem::with_id(app, &id, &format!("{} - 载入中...", acc.account.display_name), false, None::<&str>)?;
-                account_items.insert(acc.account.id.clone(), item.clone());
-                menu_items.push(Box::new(item));
+        // Add row for each enabled account in shared overview order
+        for acc in &ordered_accounts {
+            if !acc.account.enabled {
+                continue;
             }
+            let id = format!("acc_row_{}", acc.account.id);
+            let item = MenuItem::with_id(app, &id, &format!("{} - 载入中...", acc.account.display_name), false, None::<&str>)?;
+            account_items.insert(acc.account.id.clone(), item.clone());
+            menu_items.push(Box::new(item));
         }
         
         let sep2 = PredefinedMenuItem::separator(app)?;
@@ -372,6 +382,7 @@ pub fn update_tray_menu(app: &AppHandle, snapshot: &DashboardSnapshot) -> Result
         *ts_guard = Some(TrayState {
             global_item,
             account_items,
+            ordered_account_ids: ordered_enabled_ids,
             refresh_item,
         });
     }

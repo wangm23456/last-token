@@ -24,7 +24,10 @@ import {
   probeCliCredentials,
   startCopilotDeviceFlow,
   pollCopilotDeviceFlow,
+  getSettings,
+  getDashboard,
 } from "@/lib/backend";
+import { applyAccountOrder, applyIdOrder } from "@/lib/accountOrder";
 import { getErrorMessage } from "@/lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -498,8 +501,29 @@ export function ProvidersTab() {
     }
   };
 
-  // Filter to manual / Copilot accounts
-  const manualAccounts = accounts.filter((a) => a.credentialSource !== "cli_auto");
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: getSettings,
+  });
+
+  const { data: dashboard } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: getDashboard,
+  });
+
+  // Filter to manual / Copilot accounts, then align with overview/tray order.
+  const manualAccounts = React.useMemo(() => {
+    const manual = accounts.filter((a) => a.credentialSource !== "cli_auto");
+    const riskOrder = dashboard
+      ? applyAccountOrder(dashboard.accounts, undefined).map((acc) => acc.account.id)
+      : undefined;
+    return applyIdOrder(
+      manual,
+      (a) => a.id,
+      settings?.accountOrder,
+      riskOrder,
+    );
+  }, [accounts, dashboard, settings?.accountOrder]);
 
   return (
     <div className="space-y-4">

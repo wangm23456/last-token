@@ -122,6 +122,10 @@ export function TrayPanel() {
   const { data: dashboard, isLoading } = query;
   const isRefreshing = refreshMutation.isPending || dashboard?.refreshInProgress === true;
 
+  // Tray runs in a separate webview, so its settings cache can stay stale after
+  // overview drag. Dashboard snapshots are already ordered by the backend.
+  const orderedAccounts = dashboard?.accounts ?? [];
+
   const worst = React.useMemo(() => {
     if (!dashboard) return null;
     return worstAcrossAccounts(dashboard.accounts);
@@ -194,18 +198,8 @@ export function TrayPanel() {
 
       {/* Body — scrollable account list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {dashboard && dashboard.accounts.length > 0 ? (
-          dashboard.accounts
-            .slice()
-            .sort((a, b) => {
-              const wA = worstTier(a.tiers);
-              const wB = worstTier(b.tiers);
-              const sevA = wA ? riskSeverity(wA.forecast.state) : -1;
-              const sevB = wB ? riskSeverity(wB.forecast.state) : -1;
-              if (sevA !== sevB) return sevB - sevA;
-              return a.account.displayName.localeCompare(b.account.displayName);
-            })
-            .map((acc) => <TrayAccountRow key={acc.account.id} account={acc} />)
+        {orderedAccounts.length > 0 ? (
+          orderedAccounts.map((acc) => <TrayAccountRow key={acc.account.id} account={acc} />)
         ) : (
           <p className="text-[10px] text-muted-foreground px-1 py-3 text-center">
             点击“打开主界面”配置你的第一个提供商。

@@ -104,6 +104,10 @@ export async function updateSettings(input: Settings): Promise<void> {
   return safeInvoke<void>("update_settings", { input });
 }
 
+export async function updateAccountOrder(order: string[]): Promise<void> {
+  return safeInvoke<void>("update_account_order", { order });
+}
+
 export async function clearHistory(): Promise<void> {
   return safeInvoke<void>("clear_history");
 }

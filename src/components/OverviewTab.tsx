@@ -1,5 +1,22 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   RefreshCw,
   Settings as SettingsIcon,
@@ -8,6 +25,8 @@ import {
   HelpCircle,
   Clock,
   TrendingUp,
+  GripVertical,
+  RotateCcw,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -18,7 +37,8 @@ import {
   CartesianGrid,
 } from "recharts";
 
-import { getTierHistory } from "@/lib/backend";
+import { getSettings, getTierHistory, updateAccountOrder } from "@/lib/backend";
+import { applyAccountOrder } from "@/lib/accountOrder";
 import { getErrorMessage } from "@/lib/errors";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +66,7 @@ import {
 import type {
   AccountDashboard,
   ProviderKind,
+  Settings,
   TierDashboard,
 } from "@/types";
 
@@ -75,7 +96,120 @@ interface SelectedTier {
   tierId: string;
 }
 
+interface SortableAccountCardProps {
+  account: AccountDashboard;
+  selectedTierId: string | null;
+  onSelectTier: (tier: TierDashboard) => void;
+  onNavigateToProviders: () => void;
+}
+
+function SortableAccountCard({
+  account: acc,
+  selectedTierId,
+  onSelectTier,
+  onNavigateToProviders,
+}: SortableAccountCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: acc.account.id });
+
+  const hasError = acc.credentialStatus !== "valid" || !!acc.error;
+  const w = worstTier(acc.tiers);
+  const cardBorderClass = w
+    ? statusColorClass(w.forecast.state).split(" ").pop() ?? "border-border"
+    : "border-border";
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      data-account-id={acc.account.id}
+      className={`border bg-card/35 hover:bg-card/50 transition-colors shadow-sm overflow-hidden ${
+        hasError ? "cursor-pointer" : ""
+      } ${isDragging ? "opacity-80 z-10 shadow-md" : ""} ${cardBorderClass}`}
+      onClick={() => {
+        if (hasError) {
+          onNavigateToProviders();
+        }
+      }}
+    >
+      <CardContent className="p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-start gap-1.5 min-w-0">
+            <button
+              type="button"
+              ref={setActivatorNodeRef}
+              className="mt-0.5 h-6 w-5 shrink-0 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-grab active:cursor-grabbing touch-none"
+              aria-label={`拖动排序 ${acc.account.displayName}`}
+              onClick={(e) => e.stopPropagation()}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-semibold text-foreground tracking-tight truncate">
+                {acc.account.displayName}
+              </span>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                {providerLabel(acc.account.provider)}
+              </span>
+            </div>
+          </div>
+
+          {hasError ? (
+            <Badge variant="destructive" className="text-[10px] px-1.5 py-0 shrink-0">
+              {acc.credentialStatus === "expired"
+                ? "凭据过期"
+                : acc.credentialStatus === "unavailable"
+                ? "查询失败"
+                : "配置错误"}
+            </Badge>
+          ) : w ? (
+            <Badge
+              variant="outline"
+              className={`text-[10px] font-medium border px-1.5 py-0 shrink-0 ${statusColorClass(
+                w.forecast.state
+              )}`}
+            >
+              {statusText(w.forecast.state)}
+            </Badge>
+          ) : null}
+        </div>
+
+        {hasError ? (
+          <p className="text-[10px] text-status-danger/90 font-medium leading-snug pl-6">
+            {acc.error || "提供商凭证加载异常，请检查配置参数。"}
+          </p>
+        ) : acc.tiers.length > 0 ? (
+          <div className="pl-6">
+            <QuotaTierList
+              tiers={acc.tiers}
+              selectedTierId={selectedTierId}
+              onSelectTier={onSelectTier}
+            />
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground pl-6">
+            暂无活跃配额监控数据，点击卡片添加。
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: OverviewTabProps) {
+  const queryClient = useQueryClient();
   const { query, refreshMutation } = useDashboardSnapshot();
   const { data: dashboard, isLoading, isRefetching, isError, error } = query;
   const [selectedTier, setSelectedTier] = React.useState<SelectedTier | null>(null);
@@ -114,36 +248,65 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
     refreshMutation.mutate();
   }, [refreshMutation, isRefetching]);
 
-  // ── Sort Accounts ────────────────────────────────────────────────
-  // Higher severity first; same severity uses earliest exhaustion/reset.
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: getSettings,
+  });
+
+  const orderMutation = useMutation({
+    mutationFn: updateAccountOrder,
+    onSuccess: (_data, order) => {
+      queryClient.setQueryData(["settings"], (prev: Settings | undefined) =>
+        prev
+          ? { ...prev, accountOrder: order }
+          : { refreshIntervalMinutes: 5, accountOrder: order },
+      );
+    },
+  });
+
+  // Manual order wins when present; otherwise sort by risk severity.
+  // While settings are still loading, trust the backend-ordered snapshot so we
+  // do not briefly re-sort by risk and diverge from tray/native menu.
   const sortedAccounts = React.useMemo<AccountDashboard[]>(() => {
     if (!dashboard) return [];
+    if (settings === undefined) return dashboard.accounts;
+    return applyAccountOrder(dashboard.accounts, settings.accountOrder);
+  }, [dashboard, settings]);
 
-    const accountSeverity = (acc: AccountDashboard): number => {
-      if (acc.credentialStatus !== "valid" || acc.error) {
-        // Account-level error: place between unknown_reset and learning.
-        return riskSeverity("unknown_reset") + 0.5;
-      }
-      const w = worstTier(acc.tiers);
-      return w ? riskSeverity(w.forecast.state) : riskSeverity("safe");
-    };
+  const hasCustomOrder = (settings?.accountOrder?.length ?? 0) > 0;
 
-    const earliestTime = (acc: AccountDashboard): number => {
-      let min = Number.POSITIVE_INFINITY;
-      for (const t of acc.tiers) {
-        const t1 = t.forecast.exhaustionAt ?? t.quota.resetsAt;
-        if (t1 && t1 < min) min = t1;
-      }
-      return min;
-    };
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
-    return [...dashboard.accounts].sort((a, b) => {
-      const sevA = accountSeverity(a);
-      const sevB = accountSeverity(b);
-      if (sevA !== sevB) return sevB - sevA;
-      return earliestTime(a) - earliestTime(b);
-    });
-  }, [dashboard]);
+  const handleDragEnd = React.useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const ids = sortedAccounts.map((acc) => acc.account.id);
+      const oldIndex = ids.indexOf(String(active.id));
+      const newIndex = ids.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) return;
+      const nextOrder = arrayMove(ids, oldIndex, newIndex);
+      queryClient.setQueryData(["settings"], (prev: Settings | undefined) =>
+        prev
+          ? { ...prev, accountOrder: nextOrder }
+          : { refreshIntervalMinutes: 5, accountOrder: nextOrder },
+      );
+      orderMutation.mutate(nextOrder);
+    },
+    [sortedAccounts, queryClient, orderMutation],
+  );
+
+  const handleResetOrder = React.useCallback(() => {
+    queryClient.setQueryData(["settings"], (prev: Settings | undefined) =>
+      prev
+        ? { ...prev, accountOrder: [] }
+        : { refreshIntervalMinutes: 5, accountOrder: [] },
+    );
+    orderMutation.mutate([]);
+  }, [queryClient, orderMutation]);
 
   // Find worst risk details for RiskHero
   const riskHeroInfo = React.useMemo(() => {
@@ -215,6 +378,19 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          {hasCustomOrder && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 text-[11px] text-muted-foreground border-border hover:bg-muted"
+              onClick={handleResetOrder}
+              disabled={orderMutation.isPending}
+              aria-label="恢复风险排序"
+            >
+              <RotateCcw className="h-3 w-3 mr-1" />
+              恢复风险排序
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
@@ -341,84 +517,30 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
 
       {/* ── Account Cards List ────────────────────────────────────── */}
       {hasAccounts && (
-        <div className="space-y-3">
-          {sortedAccounts.map((acc) => {
-            const hasError = acc.credentialStatus !== "valid" || !!acc.error;
-            const w = worstTier(acc.tiers);
-            const cardBorderClass = w
-              ? statusColorClass(w.forecast.state).split(" ").pop() ?? "border-border"
-              : "border-border";
-
-            return (
-              <Card
-                key={acc.account.id}
-                data-account-id={acc.account.id}
-                className={`border bg-card/35 hover:bg-card/50 transition-colors shadow-sm overflow-hidden ${
-                  hasError ? "cursor-pointer" : ""
-                } ${cardBorderClass}`}
-                onClick={() => {
-                  if (hasError) {
-                    onNavigateToProviders();
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext
+            items={sortedAccounts.map((acc) => acc.account.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-3">
+              {sortedAccounts.map((acc) => (
+                <SortableAccountCard
+                  key={acc.account.id}
+                  account={acc}
+                  selectedTierId={
+                    selectedTier?.account.account.id === acc.account.id
+                      ? selectedTier.tierId
+                      : null
                   }
-                }}
-              >
-                <CardContent className="p-3.5 space-y-2.5">
-                  {/* Account Header */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-foreground tracking-tight">
-                        {acc.account.displayName}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                        {providerLabel(acc.account.provider)}
-                      </span>
-                    </div>
-
-                    {hasError ? (
-                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                        {acc.credentialStatus === "expired"
-                          ? "凭据过期"
-                          : acc.credentialStatus === "unavailable"
-                          ? "查询失败"
-                          : "配置错误"}
-                      </Badge>
-                    ) : w ? (
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] font-medium border px-1.5 py-0 ${statusColorClass(
-                          w.forecast.state
-                        )}`}
-                      >
-                        {statusText(w.forecast.state)}
-                      </Badge>
-                    ) : null}
-                  </div>
-
-                  {/* Tier list or status row */}
-                  {hasError ? (
-                    <p className="text-[10px] text-status-danger/90 font-medium leading-snug">
-                      {acc.error || "提供商凭证加载异常，请检查配置参数。"}
-                    </p>
-                  ) : acc.tiers.length > 0 ? (
-                    <QuotaTierList
-                      tiers={acc.tiers}
-                      selectedTierId={
-                        selectedTier?.account.account.id === acc.account.id
-                          ? selectedTier.tierId
-                          : null
-                      }
-                      onSelectTier={(tier) =>
-                        setSelectedTier({ account: acc, tierId: tier.quota.id })
-                      }
-                    />
-                  ) : (
-                    <p className="text-[10px] text-muted-foreground">暂无活跃配额监控数据，点击卡片添加。</p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  onSelectTier={(tier) =>
+                    setSelectedTier({ account: acc, tierId: tier.quota.id })
+                  }
+                  onNavigateToProviders={onNavigateToProviders}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* ── Details Dialog & Chart ────────────────────────────────── */}

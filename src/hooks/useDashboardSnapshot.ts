@@ -62,6 +62,8 @@ export function useDashboardSnapshot(): UseDashboardSnapshotResult {
           } else {
             void queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEY });
           }
+          // Keep settings fresh across surfaces (main + tray webviews).
+          void queryClient.invalidateQueries({ queryKey: ["settings"] });
         }),
       )
       .then((dispose) => {
