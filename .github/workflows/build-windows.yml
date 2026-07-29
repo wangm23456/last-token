@@ -102,7 +102,7 @@ jobs:
         if: needs.draft.outputs.has_cn == 'true' && needs.draft.outputs.release_id != ''
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release upload ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
+          command: release upload ${{ secrets.CN_APPLICATION }} ${{ needs.draft.outputs.release_id }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
 
   publish:
@@ -114,5 +114,5 @@ jobs:
       - name: Publish CrabNebula Release
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release publish ${{ secrets.CN_APPLICATION }} --release ${{ needs.draft.outputs.release_id }} --framework tauri
+          command: release publish ${{ secrets.CN_APPLICATION }} ${{ needs.draft.outputs.release_id }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
