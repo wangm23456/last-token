@@ -5,6 +5,7 @@
   "windows": ["main", "tray-panel"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "widgets:default"
   ]
 }

@@ -4,7 +4,7 @@ pub mod providers;
 pub mod forecast;
 pub mod alerts;
 pub mod tray;
-pub mod env_secrets;
+pub mod file_secret_store;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use crate::domain::{
     TierDashboard, CredentialProbe, CredentialStatus, CredentialSource, QuotaTier,
 };
 use crate::storage::{Storage, SecretStore};
-use crate::env_secrets::ShellEnvSecretStore;
+use crate::file_secret_store::FileSecretStore;
 use crate::providers::query_provider_quota;
 use crate::forecast::compute_forecast;
 
@@ -1152,6 +1152,7 @@ pub fn run() {
     }
     builder = builder.plugin(tauri_plugin_opener::init());
     builder = builder.plugin(tauri_plugin_notification::init());
+    builder = builder.plugin(tauri_plugin_widgets::init());
     builder
         .setup(|app| {
             // Menu-bar app: no Dock icon, lives in the system tray.
@@ -1164,7 +1165,7 @@ pub fn run() {
             let db_path = app_data_dir.join("last-token.sqlite3");
 
             let db = Arc::new(Storage::new(db_path).expect("Failed to initialize database"));
-            let secret_store = Arc::new(ShellEnvSecretStore::new());
+            let secret_store = Arc::new(FileSecretStore::new(app_data_dir.clone()));
             let client = reqwest::Client::builder()
                 .use_rustls_tls()
                 .build()
