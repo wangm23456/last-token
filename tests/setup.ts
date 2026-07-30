@@ -2,6 +2,25 @@ import "@testing-library/jest-dom";
 import { afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
+// Pin language at module load time (before any test code imports the i18n
+// module). Tests assert against zh-CN strings — the same default used in
+// production for this locale. Setting these at the top level (not inside
+// beforeAll) ensures the i18n init sees the right values when it first
+// evaluates navigator.language / localStorage.
+if (typeof navigator !== "undefined") {
+  Object.defineProperty(navigator, "language", {
+    configurable: true,
+    get: () => "zh-CN",
+  });
+}
+if (typeof window !== "undefined" && window.localStorage) {
+  try {
+    window.localStorage.setItem("last-token.lang", "zh-CN");
+  } catch {
+    // Ignore storage errors; the navigator.language override above is enough.
+  }
+}
+
 // Clean up after each test
 afterEach(() => {
   cleanup();

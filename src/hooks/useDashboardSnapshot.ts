@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient, type QueryClient, type UseMutationResult, type UseQueryResult } from "@tanstack/react-query";
 import { toast } from "sonner";
+import i18n from "@/i18n";
 
 import { getDashboard, refreshAll } from "@/lib/backend";
 import { getErrorMessage } from "@/lib/errors";
@@ -35,11 +36,11 @@ export function useDashboardSnapshot(): UseDashboardSnapshotResult {
     mutationFn: refreshAll,
     onSuccess: (data) => {
       queryClient.setQueryData(DASHBOARD_QUERY_KEY, data);
-      toast.success("刷新成功");
+      toast.success(i18n.t("refresh.success"));
     },
     onError: (err) => {
       const message = getErrorMessage(err);
-      toast.error(`刷新失败: ${message}`);
+      toast.error(i18n.t("refresh.failed", { message }));
     },
   });
 

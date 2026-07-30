@@ -1,4 +1,6 @@
 import * as React from "react";
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { QuotaTier, RiskState, TierDashboard } from "@/types";
 
@@ -91,14 +93,15 @@ export function worstTier(tiers: TierDashboard[]): TierDashboard | null {
 
 export function formatTimeMargin(ms: number | null): string {
   if (ms == null) return "";
+  const t = i18n.t.bind(i18n);
   const diff = ms - Date.now();
-  if (diff <= 0) return "0分钟";
+  if (diff <= 0) return t("format.zeroMinutes");
   const hours = Math.floor(diff / 3600000);
   const mins = Math.floor((diff % 3600000) / 60000);
   if (hours > 0) {
-    return `${hours}小时${mins}分钟`;
+    return t("format.hoursMinutes", { h: hours, m: mins });
   }
-  return `${mins}分钟`;
+  return t("format.minutes", { n: mins });
 }
 
 const numberFormatter = new Intl.NumberFormat("zh-CN");
@@ -133,22 +136,7 @@ export function statusColorClass(state: RiskState): string {
 }
 
 export function statusText(state: RiskState): string {
-  switch (state) {
-    case "exhausted":
-      return "已耗尽";
-    case "at_risk":
-      return "有耗尽风险";
-    case "unknown_reset":
-      return "重置时间未知";
-    case "learning":
-      return "正在分析速率";
-    case "safe":
-      return "额度充足";
-    case "error":
-      return "查询错误";
-    default:
-      return "未知";
-  }
+  return i18n.t(`status.${state}`);
 }
 
 function progressOverlayColor(tier: TierDashboard): string {
@@ -182,6 +170,7 @@ export function QuotaTierList({
   compact = false,
   className,
 }: QuotaTierListProps) {
+  const { t } = useTranslation();
   const sorted = React.useMemo(() => sortTiers(tiers), [tiers]);
 
   if (sorted.length === 0) {
@@ -201,11 +190,11 @@ export function QuotaTierList({
         const absolute = formatAbsoluteQuota(quota);
         const rateText =
           tier.forecast.state === "learning"
-            ? "分析中..."
-            : `消耗速率: ${tier.forecast.ratePerHour.toFixed(1)}%/时`;
+            ? t("format.rateAnalyzing")
+            : t("format.ratePerHour", { rate: tier.forecast.ratePerHour.toFixed(1) });
         const resetText = quota.resetsAt
-          ? `${formatTimeMargin(quota.resetsAt)} 后重置`
-          : "周期重置未指定";
+          ? t("format.resetsIn", { time: formatTimeMargin(quota.resetsAt) })
+          : t("format.resetUnknown");
 
         const body = (
           <>
@@ -219,7 +208,7 @@ export function QuotaTierList({
                 {quota.label}
               </span>
               {isUnlimited ? (
-                <span className="font-semibold text-status-safe">无限额度</span>
+                <span className="font-semibold text-status-safe">{t("overview.unlimitedQuota")}</span>
               ) : (
                 <span className="font-semibold text-foreground tabular-nums">
                   {quota.utilization.toFixed(1)}%
@@ -263,7 +252,7 @@ export function QuotaTierList({
                 compact ? "text-[9px]" : "text-[10px]"
               )}
             >
-              <span>{isUnlimited ? "无耗尽风险" : rateText}</span>
+              <span>{isUnlimited ? t("status.safe") : rateText}</span>
               <span>{resetText}</span>
             </div>
           </>

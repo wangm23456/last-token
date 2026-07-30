@@ -1,12 +1,12 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   Plus,
   Trash2,
   Edit2,
   RefreshCw,
-  Info,
   CheckCircle,
   AlertCircle,
   Eye,
@@ -30,7 +30,8 @@ import {
 } from "@/lib/backend";
 import { applyAccountOrder, applyIdOrder } from "@/lib/accountOrder";
 import { getErrorMessage } from "@/lib/errors";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { tierSortKey } from "@/components/QuotaTierList";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -62,26 +63,10 @@ import {
 } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Empty } from "@/components/ui/empty";
-import { tierSortKey } from "@/components/QuotaTierList";
-import { AlertRule, PublicAccount, ProviderConfig, ProviderKind, SecretPayload, CredentialProbe } from "@/types";
-
-const providerLabel = (p: ProviderKind) => {
-  const labels: Record<ProviderKind, string> = {
-    claude: "Claude",
-    codex: "Codex",
-    gemini: "Gemini",
-    copilot: "Copilot",
-    kimi: "Kimi",
-    zhipu: "Zhipu",
-    zhipu_team: "Zhipu Team",
-    minimax: "MiniMax",
-    zenmux: "ZenMux",
-    volcengine: "Volcengine",
-  };
-  return labels[p] || p;
-};
+import { AlertRule, PublicAccount, ProviderConfig, ProviderKind, SecretPayload } from "@/types";
 
 export function ProvidersTab() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [editingAccount, setEditingAccount] = React.useState<PublicAccount | null>(null);
@@ -91,7 +76,7 @@ export function ProvidersTab() {
   const [displayName, setDisplayName] = React.useState("");
   const [enabled, setEnabled] = React.useState(true);
   const [providerType, setProviderType] = React.useState<ProviderKind>("kimi");
-  
+
   // Provider Specific Configs
   const [githubDomain, setGithubDomain] = React.useState("");
   const [zhipuRegion, setZhipuRegion] = React.useState("cn");
@@ -143,10 +128,10 @@ export function ProvidersTab() {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setIsFormOpen(false);
       resetForm();
-      toast.success("提供商保存成功");
+      toast.success(t("providers.toasts.saved"));
     },
     onError: (err) => {
-      toast.error(`保存失败: ${getErrorMessage(err)}`);
+      toast.error(t("providers.toasts.saveFailed", { message: getErrorMessage(err) }));
     },
   });
 
@@ -157,10 +142,10 @@ export function ProvidersTab() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setDeletingAccount(null);
-      toast.success("提供商删除成功");
+      toast.success(t("providers.toasts.deleted"));
     },
     onError: (err) => {
-      toast.error(`删除失败: ${getErrorMessage(err)}`);
+      toast.error(t("providers.toasts.deleteFailed", { message: getErrorMessage(err) }));
     },
   });
 
@@ -171,13 +156,18 @@ export function ProvidersTab() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       if (created.length === 0) {
-        toast.info("未发现新的环境变量凭证");
+        toast.info(t("providers.toasts.noNewEnv"));
       } else {
-        toast.success(`已自动添加 ${created.length} 个提供商：${created.map((a) => a.displayName).join(", ")}`);
+        toast.success(
+          t("providers.toasts.autoAdded", {
+            count: created.length,
+            names: created.map((a) => a.displayName).join(", "),
+          }),
+        );
       }
     },
     onError: (err) => {
-      toast.error(`自动发现失败: ${getErrorMessage(err)}`);
+      toast.error(t("providers.toasts.discoverFailed", { message: getErrorMessage(err) }));
     },
   });
 
@@ -208,17 +198,27 @@ export function ProvidersTab() {
       if (cliCount > 0 || envCount > 0) {
         const parts: string[] = [];
         if (cliCount > 0) {
-          parts.push(`官方 CLI 凭证 (${newCli.map((c) => providerLabel(c.provider)).join(", ")})`);
+          parts.push(
+            t("providers.toasts.importCliPart", {
+              names: newCli.map((c) => t(`providers.cli.${c.provider}Name`)).join(", "),
+            }),
+          );
         }
         if (envCount > 0) {
-          parts.push(`环境变量提供商 (${envAccounts.map((e) => e.displayName).join(", ")})`);
+          parts.push(
+            t("providers.toasts.importEnvPart", {
+              names: envAccounts.map((e) => e.displayName).join(", "),
+            }),
+          );
         }
-        toast.success(`导入成功！自动添加了：${parts.join(" 和 ")}`);
+        toast.success(
+          t("providers.toasts.importOk", { parts: parts.join(t("providers.toasts.importJoin")) }),
+        );
       } else {
-        toast.info("未检测到新的凭证（可能已导入，或相应环境变量/CLI 配置文件不存在）。");
+        toast.info(t("providers.toasts.importEmpty"));
       }
     } catch (err) {
-      toast.error(`检测与导入失败: ${getErrorMessage(err)}`);
+      toast.error(t("providers.toasts.importFailed", { message: getErrorMessage(err) }));
     } finally {
       setIsImporting(false);
     }
@@ -278,7 +278,7 @@ export function ProvidersTab() {
     setDisplayName(acc.displayName);
     setEnabled(acc.enabled);
     setProviderType(acc.provider);
-    
+
     // Unpack config
     switch (acc.config.type) {
       case "copilot":
@@ -338,7 +338,7 @@ export function ProvidersTab() {
     setAccessKeyId("");
     setSecretAccessKey("");
     setShowSecret(false);
-    
+
     // Clear copilot polling
     setCopilotStatus("idle");
     setCopilotDeviceCode("");
@@ -364,11 +364,11 @@ export function ProvidersTab() {
       try {
         const granted = await requestNotificationPermission();
         if (!granted) {
-          toast.error("系统通知权限未授予，无法开启额度告警");
+          toast.error(t("providers.toasts.notificationDenied"));
           return;
         }
       } catch (err) {
-        toast.error("系统通知权限未授予，无法开启额度告警");
+        toast.error(t("providers.toasts.notificationDenied"));
         return;
       }
     }
@@ -379,7 +379,7 @@ export function ProvidersTab() {
 
   const handleFormSubmit = () => {
     if (editingAccount && !alertRulesValid) {
-      toast.error("请将告警阈值设为 1–99 的整数");
+      toast.error(t("providers.toasts.thresholdInvalid"));
       return;
     }
 
@@ -400,18 +400,18 @@ export function ProvidersTab() {
     }
 
     if (!displayName.trim()) {
-      toast.error("请输入提供商名称");
+      toast.error(t("providers.toasts.nameRequired"));
       return;
     }
 
     // ZenMux URL Validation
     if (providerType === "zenmux") {
       if (!zenmuxUrl.startsWith("https://")) {
-        toast.error("ZenMux 额度 URL 必须以 https:// 开头");
+        toast.error(t("providers.toasts.zenmuxHttps"));
         return;
       }
       if (!zenmuxUrl.includes("zenmux.")) {
-        toast.error("ZenMux 额度 URL 必须包含 zenmux. 域名");
+        toast.error(t("providers.toasts.zenmuxDomain"));
         return;
       }
     }
@@ -452,7 +452,7 @@ export function ProvidersTab() {
         break;
       case "zhipu_team":
         if (!zhipuTeamOrgId.trim() || !zhipuTeamProjId.trim()) {
-          toast.error("请输入 Org ID 和 Project ID");
+          toast.error(t("providers.toasts.zhipuTeamIdRequired"));
           return;
         }
         config = {
@@ -499,9 +499,9 @@ export function ProvidersTab() {
       // Copy code to clipboard automatically; do not lie to the user if it fails.
       try {
         await navigator.clipboard.writeText(startRes.userCode);
-        toast.success("用户验证码已复制到剪贴板，请在浏览器中粘贴激活。");
+        toast.success(t("providers.toasts.codeCopied"));
       } catch {
-        toast.info("无法自动复制验证码，请手动复制。");
+        toast.info(t("providers.toasts.codeCopyFailed"));
       }
 
       // Start Polling — interval is resettable so we can honor GitHub's
@@ -525,7 +525,7 @@ export function ProvidersTab() {
             if (pollRes.type === "authorized") {
               stopPolling();
               setCopilotStatus("success");
-              toast.success("GitHub Copilot 关联成功");
+              toast.success(t("providers.toasts.linkSuccess"));
               queryClient.invalidateQueries({ queryKey: ["accounts"] });
               queryClient.invalidateQueries({ queryKey: ["dashboard"] });
               resetForm();
@@ -533,11 +533,11 @@ export function ProvidersTab() {
             } else if (pollRes.type === "expired") {
               stopPolling();
               setCopilotStatus("expired");
-              setCopilotError("验证码已过期，请重新获取。");
+              setCopilotError(t("providers.toasts.codeExpired"));
             } else if (pollRes.type === "denied") {
               stopPolling();
               setCopilotStatus("error");
-              setCopilotError(pollRes.message || "用户取消了授权。");
+              setCopilotError(pollRes.message || t("providers.toasts.codeDenied"));
             } else if (pollRes.type === "pending") {
               if (
                 pollRes.retryAfterSeconds &&
@@ -551,7 +551,7 @@ export function ProvidersTab() {
             stopPolling();
             setCopilotStatus("error");
             setCopilotError(
-              err instanceof Error ? err.message : "轮询出错",
+              err instanceof Error ? err.message : t("providers.toasts.codeCopyPolling"),
             );
           }
         }, sec * 1000);
@@ -559,15 +559,15 @@ export function ProvidersTab() {
       startPolling(intervalSec);
     } catch (err) {
       setCopilotStatus("error");
-      setCopilotError(err instanceof Error ? err.message : "请求设备码失败");
+      setCopilotError(err instanceof Error ? err.message : t("providers.toasts.codeCopyRequest"));
     }
   };
 
   const handleCopyCode = () => {
     navigator.clipboard
       .writeText(copilotUserCode)
-      .then(() => toast.success("验证码已复制"))
-      .catch(() => toast.error("复制失败，请手动选中复制。"));
+      .then(() => toast.success(t("providers.toasts.codeCopyOk")))
+      .catch(() => toast.error(t("providers.toasts.codeCopyManual")));
   };
 
   // Close timer when component unmounts
@@ -593,24 +593,32 @@ export function ProvidersTab() {
   const getCliStatusLabel = (status: string) => {
     switch (status) {
       case "valid":
-        return <Badge variant="outline" className="text-[10px] text-status-safe border-status-safe/20 bg-status-safe/5">已检测</Badge>;
+        return (
+          <Badge variant="outline" className="text-[10px] text-status-safe border-status-safe/20 bg-status-safe/5">
+            {t("providers.cli.detected")}
+          </Badge>
+        );
       case "expired":
-        return <Badge variant="outline" className="text-[10px] text-status-warning border-status-warning/20 bg-status-warning/5">已过期</Badge>;
+        return (
+          <Badge variant="outline" className="text-[10px] text-status-warning border-status-warning/20 bg-status-warning/5">
+            {t("providers.cli.expired")}
+          </Badge>
+        );
       case "not_found":
-        return <Badge variant="outline" className="text-[10px] text-muted-foreground">未检测到</Badge>;
+        return <Badge variant="outline" className="text-[10px] text-muted-foreground">{t("providers.cli.notFound")}</Badge>;
       default:
-        return <Badge variant="outline" className="text-[10px] text-muted-foreground">检测异常</Badge>;
+        return <Badge variant="outline" className="text-[10px] text-muted-foreground">{t("providers.cli.error")}</Badge>;
     }
   };
 
   const getCliSourceGuide = (provider: string) => {
     switch (provider) {
       case "claude":
-        return "尝试读取配置文件 ~/.claude/.credentials.json";
+        return t("providers.cli.claudeGuide");
       case "codex":
-        return "尝试读取配置文件 ~/.codex/auth.json (需为 chatgpt/OAuth 模式)";
+        return t("providers.cli.codexGuide");
       case "gemini":
-        return "尝试读取配置文件 ~/.gemini/oauth_creds.json";
+        return t("providers.cli.geminiGuide");
       default:
         return "";
     }
@@ -646,9 +654,9 @@ export function ProvidersTab() {
       <Card className="border-border bg-card/25 shadow-sm overflow-hidden">
         <CardContent className="p-3 flex items-center justify-between gap-3">
           <div className="space-y-0.5">
-            <h4 className="text-xs font-semibold text-foreground">一键导入凭证</h4>
+            <h4 className="text-xs font-semibold text-foreground">{t("providers.oneClickImport.title")}</h4>
             <p className="text-[10px] text-muted-foreground">
-              检测本地官方 CLI 配置文件与当前环境变量，自动导入所有可用的 API 密钥和账户凭证。
+              {t("providers.oneClickImport.desc")}
             </p>
           </div>
           <Button
@@ -658,7 +666,7 @@ export function ProvidersTab() {
             disabled={isImporting}
           >
             <Wand2 className={`h-3.5 w-3.5 ${isImporting ? "animate-spin" : ""}`} />
-            检测并导入
+            {t("providers.oneClickImport.button")}
           </Button>
         </CardContent>
       </Card>
@@ -666,7 +674,7 @@ export function ProvidersTab() {
       {/* ── CLI Auto Discovery Section ────────────────────────────── */}
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">官方 CLI 自动扫描</h3>
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("providers.cli.section")}</h3>
           <Button
             variant="ghost"
             size="xs"
@@ -675,7 +683,7 @@ export function ProvidersTab() {
             disabled={isProbing}
           >
             <RefreshCw className={`h-3 w-3 ${isProbing ? "animate-spin" : ""}`} />
-            重新扫描
+            {t("providers.cli.rescan")}
           </Button>
         </div>
 
@@ -687,7 +695,7 @@ export function ProvidersTab() {
                   <div className="flex items-center gap-2">
                     {getCliStatusIcon(probe.status)}
                     <span className="text-xs font-semibold text-foreground">
-                      {probe.provider === "claude" ? "Claude Code" : probe.provider === "codex" ? "Codex CLI" : "Gemini CLI"}
+                      {probe.provider === "claude" ? t("providers.cli.claudeName") : probe.provider === "codex" ? t("providers.cli.codexName") : t("providers.cli.geminiName")}
                     </span>
                     {getCliStatusLabel(probe.status)}
                   </div>
@@ -708,7 +716,7 @@ export function ProvidersTab() {
                       className="h-7 text-[11px] border-border shrink-0"
                       onClick={() => handleEdit(cliAcc, { alertsOnly: true })}
                     >
-                      告警设置
+                      {t("providers.alertSettingsBtn")}
                     </Button>
                   );
                 })()}
@@ -721,7 +729,7 @@ export function ProvidersTab() {
       {/* ── Manual Accounts Section ────────────────────────────────── */}
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">自管/手动提供商</h3>
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("providers.manual.section")}</h3>
           <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
@@ -731,19 +739,19 @@ export function ProvidersTab() {
               disabled={discoverMutation.isPending}
             >
               <Wand2 className={`h-3.5 w-3.5 ${discoverMutation.isPending ? "animate-spin" : ""}`} />
-              自动发现
+              {t("providers.manual.autoDiscover")}
             </Button>
             <Button size="xs" className="h-7 text-[11px] flex items-center gap-1.5" onClick={handleAddNew}>
               <Plus className="h-3.5 w-3.5" />
-              添加提供商
+              {t("providers.manual.add")}
             </Button>
           </div>
         </div>
 
         {manualAccounts.length === 0 ? (
           <Empty
-            title="暂无手动配置的提供商"
-            description="点击上方“自动发现”可从环境变量批量检测添加（如 MOONSHOT_API_KEY / KIMI_API_KEY / MINIMAX_API_KEY 等）；或手动添加提供商。"
+            title={t("providers.manual.emptyTitle")}
+            description={t("providers.manual.emptyDesc")}
           />
         ) : (
           <div className="grid gap-2.5">
@@ -753,10 +761,10 @@ export function ProvidersTab() {
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-foreground">{acc.displayName}</span>
-                      {!acc.enabled && <Badge variant="secondary" className="text-[9px] px-1 py-0 scale-90">已禁用</Badge>}
+                      {!acc.enabled && <Badge variant="secondary" className="text-[9px] px-1 py-0 scale-90">{t("providers.manual.disabled")}</Badge>}
                     </div>
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                      {providerLabel(acc.provider)} · {acc.config.type === "volcengine" ? "AK/SK 环境变量" : "API 环境变量"}
+                      {t(`providers.provider.${acc.provider}`)} · {acc.config.type === "volcengine" ? t("providers.manual.sourceVolc") : t("providers.manual.sourceApi")}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -765,7 +773,7 @@ export function ProvidersTab() {
                       size="icon"
                       className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       onClick={() => handleEdit(acc)}
-                      aria-label={`编辑 ${acc.displayName}`}
+                      aria-label={t("providers.manual.editAria", { name: acc.displayName })}
                     >
                       <Edit2 className="h-3.5 w-3.5" />
                     </Button>
@@ -774,7 +782,7 @@ export function ProvidersTab() {
                       size="icon"
                       className="h-8 w-8 text-status-danger hover:bg-status-danger/10"
                       onClick={() => setDeletingAccount(acc)}
-                      aria-label={`删除 ${acc.displayName}`}
+                      aria-label={t("providers.manual.deleteAria", { name: acc.displayName })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -795,12 +803,16 @@ export function ProvidersTab() {
           <DialogContent className="sm:max-w-[420px] bg-card border-border text-foreground overflow-y-auto max-h-[90vh]">
             <DialogHeader>
               <DialogTitle className="text-sm font-bold">
-                {editingAccount ? (alertsOnlyMode ? `告警设置: ${editingAccount.displayName}` : `编辑提供商: ${editingAccount.displayName}`) : "添加自管提供商"}
+                {editingAccount
+                  ? (alertsOnlyMode
+                      ? t("providers.editAlertTitle", { name: editingAccount.displayName })
+                      : t("providers.form.editTitle", { name: editingAccount.displayName }))
+                  : t("providers.form.addTitle")}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
                 {alertsOnlyMode
-                  ? "为各额度周期配置系统通知阈值。开启告警前会请求系统通知权限。"
-                  : "凭证优先从对应环境变量读取（如 KIMI_API_KEY、MINIMAX_API_KEY、ANTHROPIC_API_KEY、GITHUB_TOKEN 等）。下方输入仅在当前会话内存缓存，不会持久化到钥匙串或磁盘。"}
+                  ? t("providers.alertsFormDesc")
+                  : t("providers.form.formDesc")}
               </DialogDescription>
             </DialogHeader>
 
@@ -808,36 +820,36 @@ export function ProvidersTab() {
               {!alertsOnlyMode && (
               <>
               {/* Type Select (Disabled on edit to prevent provider change) */}
-              <Field label="提供商类型">
+              <Field label={t("providers.form.type")}>
                 <Select
                   value={providerType}
                   onValueChange={(val) => { if (val) setProviderType(val as ProviderKind); }}
                   disabled={!!editingAccount || alertsOnlyMode}
                 >
                   <SelectTrigger
-                    aria-label="提供商类型"
+                    aria-label={t("providers.form.type")}
                     className="w-full h-8 text-xs bg-card border-border text-foreground"
                   >
-                    <SelectValue placeholder="选择提供商" />
+                    <SelectValue placeholder={t("providers.form.typePlaceholder")} />
                   </SelectTrigger>
                   <SelectContent className="bg-card border-border text-foreground">
-                    <SelectItem value="kimi">Kimi For Coding</SelectItem>
-                    <SelectItem value="zhipu">智谱 GLM (个人版)</SelectItem>
-                    <SelectItem value="zhipu_team">智谱 GLM (团队版)</SelectItem>
-                    <SelectItem value="minimax">MiniMax 编程套餐</SelectItem>
-                    <SelectItem value="zenmux">ZenMux 代理配额</SelectItem>
-                    <SelectItem value="volcengine">火山方舟 Ark (OpenAPI)</SelectItem>
-                    <SelectItem value="copilot">GitHub Copilot</SelectItem>
+                    <SelectItem value="kimi">{t("providers.provider.kimi")}</SelectItem>
+                    <SelectItem value="zhipu">{t("providers.provider.zhipu")}</SelectItem>
+                    <SelectItem value="zhipu_team">{t("providers.provider.zhipu_team")}</SelectItem>
+                    <SelectItem value="minimax">{t("providers.provider.minimax")}</SelectItem>
+                    <SelectItem value="zenmux">{t("providers.provider.zenmux")}</SelectItem>
+                    <SelectItem value="volcengine">{t("providers.provider.volcengine")}</SelectItem>
+                    <SelectItem value="copilot">{t("providers.provider.copilot")}</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
 
               {/* Display Name */}
-              <Field label="显示名称">
+              <Field label={t("providers.form.name")}>
                 <Input disabled={alertsOnlyMode}
-                  aria-label="显示名称"
+                  aria-label={t("providers.form.name")}
                   className="h-8 text-xs bg-card border-border text-foreground"
-                  placeholder={`如: My ${providerLabel(providerType)} Account`}
+                  placeholder={t("providers.form.namePlaceholder", { provider: t(`providers.provider.${providerType}`) })}
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                 />
@@ -846,11 +858,11 @@ export function ProvidersTab() {
               {/* Copilot Device flow or Manual fields */}
               {providerType === "copilot" ? (
                 <div className="space-y-3.5 border-t border-border/40 pt-3">
-                  <Field label="GitHub 域名 (可选)" description="企业版 GHES 实例需要填入完整的主机域名。默认使用 github.com。">
+                  <Field label={t("providers.form.githubDomain")} description={t("providers.form.githubDomainDesc")}>
                     <Input
-                      aria-label="GitHub 域名"
+                      aria-label={t("providers.form.githubDomain")}
                       className="h-8 text-xs bg-card border-border text-foreground"
-                      placeholder="ghes.company.com"
+                      placeholder={t("providers.form.githubDomainPlaceholder")}
                       value={githubDomain}
                       onChange={(e) => setGithubDomain(e.target.value)}
                       disabled={copilotStatus === "polling"}
@@ -860,24 +872,24 @@ export function ProvidersTab() {
                   {/* Device code actions */}
                   {copilotStatus === "idle" && (
                     <Button size="sm" className="w-full text-xs" onClick={handleCopilotLink}>
-                      开始关联 GitHub 账户
+                      {t("providers.form.startLink")}
                     </Button>
                   )}
 
                   {copilotStatus === "requesting" && (
                     <div className="flex items-center justify-center gap-2 py-2">
                       <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">正在请求 GitHub 授权码...</span>
+                      <span className="text-xs text-muted-foreground">{t("providers.form.requesting")}</span>
                     </div>
                   )}
 
                   {copilotStatus === "polling" && (
                     <div className="space-y-2 bg-muted/40 border border-border p-3 rounded-lg">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-muted-foreground font-semibold">GitHub 激活码</span>
+                        <span className="text-[11px] text-muted-foreground font-semibold">{t("providers.form.deviceCode")}</span>
                         <div className="flex gap-1.5">
                           <Button size="xs" variant="outline" className="h-6 text-[10px] gap-1 border-border" onClick={handleCopyCode}>
-                            <Copy className="h-3 w-3" /> 复制
+                            <Copy className="h-3 w-3" /> {t("providers.form.copy")}
                           </Button>
                           <a
                             href={copilotVerifyUri}
@@ -885,18 +897,18 @@ export function ProvidersTab() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted text-[10px] font-medium h-6 px-2 hover:text-foreground gap-1 select-none"
                           >
-                            <ExternalLink className="h-3 w-3" /> 去浏览器激活
+                            <ExternalLink className="h-3 w-3" /> {t("providers.form.openBrowser")}
                           </a>
                         </div>
                       </div>
-                      
+
                       <div className="text-center py-2.5 bg-card/65 border border-border rounded-md font-mono text-lg font-bold tracking-widest select-all text-foreground">
                         {copilotUserCode}
                       </div>
 
                       <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground pt-1">
                         <RefreshCw className="h-3 w-3 animate-spin" />
-                        <span>等待 GitHub 授权状态...</span>
+                        <span>{t("providers.form.waiting")}</span>
                       </div>
                     </div>
                   )}
@@ -909,17 +921,17 @@ export function ProvidersTab() {
                 <>
                   {/* Zhipu Region */}
                   {providerType === "zhipu" && (
-                    <Field label="业务区域">
+                    <Field label={t("providers.form.region")}>
                       <Select value={zhipuRegion} onValueChange={(val) => { if (val) setZhipuRegion(val); }}>
                         <SelectTrigger
-                          aria-label="业务区域"
+                          aria-label={t("providers.form.region")}
                           className="w-full h-8 text-xs bg-card border-border text-foreground"
                         >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-card border-border text-foreground">
-                          <SelectItem value="cn">中国站 (open.bigmodel.cn)</SelectItem>
-                          <SelectItem value="global">国际站 (api.z.ai)</SelectItem>
+                          <SelectItem value="cn">{t("providers.form.zhipuRegionCn")}</SelectItem>
+                          <SelectItem value="global">{t("providers.form.zhipuRegionGlobal")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </Field>
@@ -928,17 +940,17 @@ export function ProvidersTab() {
                   {/* Zhipu Team Organization and Project IDs */}
                   {providerType === "zhipu_team" && (
                     <>
-                      <Field label="Organization ID" description="智谱企业端给定的 Organization ID。">
+                      <Field label={t("providers.form.orgId")} description={t("providers.form.orgIdDesc")}>
                         <Input
-                          aria-label="Organization ID"
+                          aria-label={t("providers.form.orgId")}
                           className="h-8 text-xs bg-card border-border text-foreground"
                           value={zhipuTeamOrgId}
                           onChange={(e) => setZhipuTeamOrgId(e.target.value)}
                         />
                       </Field>
-                      <Field label="Project ID" description="智谱关联项目的 Project ID。">
+                      <Field label={t("providers.form.projectId")} description={t("providers.form.projectIdDesc")}>
                         <Input
-                          aria-label="Project ID"
+                          aria-label={t("providers.form.projectId")}
                           className="h-8 text-xs bg-card border-border text-foreground"
                           value={zhipuTeamProjId}
                           onChange={(e) => setZhipuTeamProjId(e.target.value)}
@@ -949,17 +961,17 @@ export function ProvidersTab() {
 
                   {/* MiniMax Region */}
                   {providerType === "minimax" && (
-                    <Field label="平台接口域名">
+                    <Field label={t("providers.form.minimaxRegion")}>
                       <Select value={minimaxRegion} onValueChange={(val) => { if (val) setMinimaxRegion(val); }}>
                         <SelectTrigger
-                          aria-label="平台接口域名"
+                          aria-label={t("providers.form.minimaxRegion")}
                           className="w-full h-8 text-xs bg-card border-border text-foreground"
                         >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-card border-border text-foreground">
-                          <SelectItem value="cn">中国站 (api.minimaxi.com)</SelectItem>
-                          <SelectItem value="global">全球站 (api.minimax.io)</SelectItem>
+                          <SelectItem value="cn">{t("providers.form.minimaxRegionCn")}</SelectItem>
+                          <SelectItem value="global">{t("providers.form.minimaxRegionGlobal")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </Field>
@@ -967,11 +979,11 @@ export function ProvidersTab() {
 
                   {/* ZenMux URL */}
                   {providerType === "zenmux" && (
-                    <Field label="额度查询 API 链接" description="ZenMux 提供的完整 HTTPS 额度状态查询接口。">
+                    <Field label={t("providers.form.zenmuxUrl")} description={t("providers.form.zenmuxUrlDesc")}>
                       <Input
-                        aria-label="额度查询 API 链接"
+                        aria-label={t("providers.form.zenmuxUrl")}
                         className="h-8 text-xs bg-card border-border text-foreground"
-                        placeholder="https://zenmux.com/api/quota"
+                        placeholder={t("providers.form.zenmuxUrlPlaceholder")}
                         value={zenmuxUrl}
                         onChange={(e) => setZenmuxUrl(e.target.value)}
                       />
@@ -980,11 +992,11 @@ export function ProvidersTab() {
 
                   {/* Volcengine Region */}
                   {providerType === "volcengine" && (
-                    <Field label="OpenAPI 默认服务区" description="火山控制台的默认 Region (一般为 cn-beijing)。">
+                    <Field label={t("providers.form.volcengineRegion")} description={t("providers.form.volcengineRegionDesc")}>
                       <Input
-                        aria-label="OpenAPI 默认服务区"
+                        aria-label={t("providers.form.volcengineRegion")}
                         className="h-8 text-xs bg-card border-border text-foreground"
-                        placeholder="cn-beijing"
+                        placeholder={t("providers.form.volcengineRegionPlaceholder")}
                         value={volcengineRegion}
                         onChange={(e) => setVolcengineRegion(e.target.value)}
                       />
@@ -994,21 +1006,21 @@ export function ProvidersTab() {
                   {/* Volcengine AK / SK */}
                   {providerType === "volcengine" ? (
                     <div className="space-y-3">
-                      <Field label="AccessKey ID" description={editingAccount ? "留空表示不更新已存值" : undefined}>
+                      <Field label={t("providers.form.accessKeyId")} description={editingAccount ? t("providers.form.keepExisting") : undefined}>
                         <Input
-                          aria-label="AccessKey ID"
+                          aria-label={t("providers.form.accessKeyId")}
                           className="h-8 text-xs bg-card border-border text-foreground"
                           value={accessKeyId}
                           onChange={(e) => setAccessKeyId(e.target.value)}
                         />
                       </Field>
                       <Field
-                        label="SecretAccessKey"
-                        description={editingAccount ? "留空表示不更新已存值" : undefined}
+                        label={t("providers.form.secretAccessKey")}
+                        description={editingAccount ? t("providers.form.keepExisting") : undefined}
                       >
                         <div className="relative">
                           <Input
-                            aria-label="SecretAccessKey"
+                            aria-label={t("providers.form.secretAccessKey")}
                             type={showSecret ? "text" : "password"}
                             className="h-8 text-xs bg-card border-border text-foreground pr-8"
                             value={secretAccessKey}
@@ -1020,7 +1032,7 @@ export function ProvidersTab() {
                             size="icon"
                             className="absolute right-1 top-1 h-6 w-6 text-muted-foreground"
                             onClick={() => setShowSecret(!showSecret)}
-                            aria-label={showSecret ? "隐藏 SecretAccessKey" : "显示 SecretAccessKey"}
+                            aria-label={showSecret ? t("providers.form.hideSecret") : t("providers.form.showSecret")}
                           >
                             {showSecret ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                           </Button>
@@ -1029,10 +1041,10 @@ export function ProvidersTab() {
                     </div>
                   ) : (
                     /* General API Key */
-                    <Field label="API 密钥" description={editingAccount ? "留空表示不更新已保存密钥" : undefined}>
+                    <Field label={t("providers.form.apiKey")} description={editingAccount ? t("providers.form.keepExisting") : undefined}>
                       <div className="relative">
                         <Input
-                          aria-label="API 密钥"
+                          aria-label={t("providers.form.apiKey")}
                           type={showSecret ? "text" : "password"}
                           className="h-8 text-xs bg-card border-border text-foreground pr-8"
                           placeholder={editingAccount ? "••••••••••••••••" : "xai-..."}
@@ -1045,7 +1057,7 @@ export function ProvidersTab() {
                           size="icon"
                           className="absolute right-1 top-1 h-6 w-6 text-muted-foreground"
                           onClick={() => setShowSecret(!showSecret)}
-                          aria-label={showSecret ? "隐藏 API 密钥" : "显示 API 密钥"}
+                          aria-label={showSecret ? t("providers.form.hideApiKey") : t("providers.form.showApiKey")}
                         >
                           {showSecret ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                         </Button>
@@ -1061,18 +1073,18 @@ export function ProvidersTab() {
               {/* Quota Alerts */}
               <div className="border-t border-border/40 pt-3 space-y-2.5">
                 <div className="space-y-0.5">
-                  <span className="text-xs font-semibold text-foreground">额度告警</span>
+                  <span className="text-xs font-semibold text-foreground">{t("providers.alert.sectionTitle")}</span>
                   <p className="text-[10px] text-muted-foreground">
-                    按额度周期独立配置。达到阈值或耗尽时发送系统通知。
+                    {t("providers.alert.sectionDesc")}
                   </p>
                 </div>
                 {!editingAccount ? (
                   <p className="text-[11px] text-muted-foreground">
-                    保存并完成首次刷新后可配置额度周期告警
+                    {t("providers.alert.afterFirstRefresh")}
                   </p>
                 ) : alertDrafts.length === 0 ? (
                   <p className="text-[11px] text-muted-foreground">
-                    保存并完成首次刷新后可配置额度周期告警
+                    {t("providers.alert.afterFirstRefresh")}
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -1098,26 +1110,26 @@ export function ProvidersTab() {
                                 {meta?.label ?? rule.tierId}
                               </div>
                               {missing && (
-                                <p className="text-[10px] text-status-warning">当前未返回</p>
+                                <p className="text-[10px] text-status-warning">{t("providers.alert.missingTier")}</p>
                               )}
                               {unlimited && (
-                                <p className="text-[10px] text-muted-foreground">无限额度无需告警</p>
+                                <p className="text-[10px] text-muted-foreground">{t("providers.alert.unlimitedNoAlert")}</p>
                               )}
                             </div>
                             <Switch
                               checked={unlimited ? false : rule.enabled}
                               disabled={unlimited}
                               onCheckedChange={(v) => handleAlertToggle(rule.tierId, v)}
-                              aria-label={`启用 ${meta?.label ?? rule.tierId} 告警`}
+                              aria-label={t("providers.alert.enableAria", { tier: meta?.label ?? rule.tierId })}
                             />
                           </div>
                           {!unlimited && (
                             <Field
-                              label="使用率阈值 (%)"
-                              description={invalid ? "请输入 1–99 的整数" : undefined}
+                              label={t("providers.alert.thresholdLabel")}
+                              description={invalid ? t("providers.alert.thresholdInvalid") : undefined}
                             >
                               <Input
-                                aria-label={`${meta?.label ?? rule.tierId} 告警阈值`}
+                                aria-label={t("providers.alert.thresholdAria", { tier: meta?.label ?? rule.tierId })}
                                 className="h-8 text-xs bg-card border-border text-foreground"
                                 type="number"
                                 min={1}
@@ -1149,13 +1161,13 @@ export function ProvidersTab() {
               {!alertsOnlyMode && (
               <div className="flex items-center justify-between border-t border-border/40 pt-3 text-xs mt-1">
                 <div className="space-y-0.5">
-                  <span className="font-semibold text-foreground">启用此账户监测</span>
-                  <p className="text-[10px] text-muted-foreground">如果关闭，后台调度将暂停查询且不在主页中展示。</p>
+                  <span className="font-semibold text-foreground">{t("providers.form.enabled")}</span>
+                  <p className="text-[10px] text-muted-foreground">{t("providers.form.enabledDesc")}</p>
                 </div>
                 <Switch
                   checked={enabled}
                   onCheckedChange={setEnabled}
-                  aria-label="启用此账户监测"
+                  aria-label={t("providers.form.enabled")}
                 />
               </div>
               )}
@@ -1163,11 +1175,11 @@ export function ProvidersTab() {
 
             <DialogFooter className="border-t border-border/40 pt-3 gap-2">
               <Button size="sm" variant="outline" className="text-xs h-8 border-border" onClick={() => { resetForm(); setIsFormOpen(false); }}>
-                取消
+                {t("providers.form.cancel")}
               </Button>
               {providerType !== "copilot" && (
                 <Button size="sm" className="text-xs h-8" onClick={handleFormSubmit} disabled={saveMutation.isPending || (!!editingAccount && !alertRulesValid)}>
-                  确定
+                  {t("providers.form.confirm")}
                 </Button>
               )}
             </DialogFooter>
@@ -1183,22 +1195,21 @@ export function ProvidersTab() {
           <AlertDialogContent className="bg-card border-border text-foreground">
             <AlertDialogHeader>
               <AlertDialogTitle className="text-sm font-bold text-status-danger">
-                删除提供商确认
+                {t("providers.delete.title")}
               </AlertDialogTitle>
               <AlertDialogDescription className="text-xs text-muted-foreground">
-                你确定要删除 {deletingAccount.displayName} 吗？
-                此操作将从软件中移除该账户配置及相关用量历史（不会影响系统的真实环境变量），删除后无法撤销。
+                {t("providers.delete.desc", { name: deletingAccount.displayName })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="gap-2">
               <AlertDialogCancel className="text-xs h-8 border-border bg-transparent hover:bg-muted">
-                取消
+                {t("providers.delete.cancel")}
               </AlertDialogCancel>
               <AlertDialogAction
                 className="text-xs h-8 bg-status-danger text-white hover:bg-status-danger/90"
                 onClick={() => deleteMutation.mutate(deletingAccount.id)}
               >
-                确定删除
+                {t("providers.delete.confirm")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

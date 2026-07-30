@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   DndContext,
   closestCenter,
@@ -65,7 +66,6 @@ import {
 } from "@/components/QuotaTierList";
 import type {
   AccountDashboard,
-  ProviderKind,
   Settings,
   TierDashboard,
 } from "@/types";
@@ -73,22 +73,6 @@ import type {
 interface OverviewTabProps {
   onNavigateToSettings: () => void;
   onNavigateToProviders: () => void;
-}
-
-function providerLabel(p: ProviderKind): string {
-  const labels: Record<ProviderKind, string> = {
-    claude: "Claude",
-    codex: "Codex",
-    gemini: "Gemini",
-    copilot: "Copilot",
-    kimi: "Kimi",
-    zhipu: "Zhipu",
-    zhipu_team: "Zhipu Team",
-    minimax: "MiniMax",
-    zenmux: "ZenMux",
-    volcengine: "Volcengine",
-  };
-  return labels[p] || p;
 }
 
 interface SelectedTier {
@@ -109,6 +93,8 @@ function SortableAccountCard({
   onSelectTier,
   onNavigateToProviders,
 }: SortableAccountCardProps) {
+  const { t } = useTranslation();
+
   const {
     attributes,
     listeners,
@@ -149,7 +135,7 @@ function SortableAccountCard({
               type="button"
               ref={setActivatorNodeRef}
               className="mt-0.5 h-6 w-5 shrink-0 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-grab active:cursor-grabbing touch-none"
-              aria-label={`拖动排序 ${acc.account.displayName}`}
+              aria-label={t("overview.dragAria", { name: acc.account.displayName })}
               onClick={(e) => e.stopPropagation()}
               {...attributes}
               {...listeners}
@@ -161,7 +147,7 @@ function SortableAccountCard({
                 {acc.account.displayName}
               </span>
               <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                {providerLabel(acc.account.provider)}
+                {acc.account.provider}
               </span>
             </div>
           </div>
@@ -169,10 +155,10 @@ function SortableAccountCard({
           {hasError ? (
             <Badge variant="destructive" className="text-[10px] px-1.5 py-0 shrink-0">
               {acc.credentialStatus === "expired"
-                ? "凭据过期"
+                ? t("status.credentialExpired")
                 : acc.credentialStatus === "unavailable"
-                ? "查询失败"
-                : "配置错误"}
+                ? t("status.credentialUnavailable")
+                : t("status.credentialMisconfigured")}
             </Badge>
           ) : w ? (
             <Badge
@@ -188,7 +174,7 @@ function SortableAccountCard({
 
         {hasError ? (
           <p className="text-[10px] text-status-danger/90 font-medium leading-snug pl-6">
-            {acc.error || "提供商凭证加载异常，请检查配置参数。"}
+            {acc.error || t("overview.credentialError")}
           </p>
         ) : acc.tiers.length > 0 ? (
           <div className="pl-6">
@@ -200,7 +186,7 @@ function SortableAccountCard({
           </div>
         ) : (
           <p className="text-[10px] text-muted-foreground pl-6">
-            暂无活跃配额监控数据，点击卡片添加。
+            {t("overview.noQuota")}
           </p>
         )}
       </CardContent>
@@ -209,6 +195,7 @@ function SortableAccountCard({
 }
 
 export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: OverviewTabProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { query, refreshMutation } = useDashboardSnapshot();
   const { data: dashboard, isLoading, isRefetching, isError, error } = query;
@@ -370,10 +357,10 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
       {/* ── Header Toolbar ────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
-          <h2 className="text-sm font-semibold text-muted-foreground tracking-tight">状态面板</h2>
+          <h2 className="text-sm font-semibold text-muted-foreground tracking-tight">{t("overview.header")}</h2>
           {dashboard && (
             <p className="text-[10px] text-muted-foreground">
-              最近刷新: {new Date(dashboard.refreshedAt).toLocaleTimeString()}
+              {t("overview.refreshedAt", { time: new Date(dashboard.refreshedAt).toLocaleTimeString() })}
             </p>
           )}
         </div>
@@ -385,10 +372,10 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
               className="h-8 px-2 text-[11px] text-muted-foreground border-border hover:bg-muted"
               onClick={handleResetOrder}
               disabled={orderMutation.isPending}
-              aria-label="恢复风险排序"
+              aria-label={t("overview.resetOrder")}
             >
               <RotateCcw className="h-3 w-3 mr-1" />
-              恢复风险排序
+              {t("overview.resetOrder")}
             </Button>
           )}
           <Button
@@ -397,7 +384,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
             className="h-8 w-8 text-muted-foreground border-border hover:bg-muted"
             onClick={handleManualRefresh}
             disabled={isRefreshing}
-            aria-label="刷新额度"
+            aria-label={t("overview.refreshAria")}
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
           </Button>
@@ -406,7 +393,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
             size="icon"
             className="h-8 w-8 text-muted-foreground border-border hover:bg-muted"
             onClick={onNavigateToSettings}
-            aria-label="设置"
+            aria-label={t("overview.settingsAria")}
           >
             <SettingsIcon className="h-3.5 w-3.5" />
           </Button>
@@ -436,7 +423,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
             )}
 
             <div className="flex-1 space-y-1">
-              <h3 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">最早风险预警</h3>
+              <h3 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">{t("overview.earliestRisk")}</h3>
               {riskHeroInfo.worstTier ? (
                 <div>
                   <p className="text-sm font-bold text-foreground">
@@ -444,29 +431,29 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {riskHeroInfo.worstTier.tier.forecast.state === "exhausted" ? (
-                      <span className="text-status-danger font-medium">额度已耗尽</span>
+                      <span className="text-status-danger font-medium">{t("overview.earliestRiskExhausted")}</span>
                     ) : riskHeroInfo.worstTier.tier.forecast.state === "at_risk" ? (
                       <span className="text-status-warning font-medium">
-                        预计在 {formatTimeMargin(riskHeroInfo.worstTier.tier.forecast.exhaustionAt)} 后耗尽，领先重置期限。
+                        {t("overview.earliestRiskAtRisk", { time: formatTimeMargin(riskHeroInfo.worstTier.tier.forecast.exhaustionAt) })}
                       </span>
                     ) : riskHeroInfo.worstTier.tier.forecast.state === "learning" ? (
-                      <span>正在收集样本，计算消耗速率。</span>
+                      <span>{t("overview.earliestRiskLearning")}</span>
                     ) : riskHeroInfo.worstTier.tier.quota.unlimited ? (
-                      <span>套餐状态安全，无耗尽风险。</span>
+                      <span>{t("overview.earliestRiskUnlimitedSafe")}</span>
                     ) : (
-                      <span>套餐状态安全，速率稳定。</span>
+                      <span>{t("overview.earliestRiskSafe")}</span>
                     )}
                   </p>
                 </div>
               ) : riskHeroInfo.worstSeverity >= 3 ? (
                 <div>
-                  <p className="text-sm font-bold text-foreground">提供商凭据异常</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">有提供商的 API 密钥或凭据已过期或校验失败。</p>
+                  <p className="text-sm font-bold text-foreground">{t("overview.credentialInvalid")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t("overview.credentialInvalidDesc")}</p>
                 </div>
               ) : (
                 <div>
-                  <p className="text-sm font-bold text-foreground">所有套餐状态安全</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">近期的消耗速率显示，所有套餐均可支撑至重置期。</p>
+                  <p className="text-sm font-bold text-foreground">{t("overview.allSafe")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t("overview.allSafeDesc")}</p>
                 </div>
               )}
             </div>
@@ -482,9 +469,9 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
               <AlertTriangle className="h-4 w-4" />
             </div>
             <div className="flex-1 space-y-1.5">
-              <h3 className="text-xs font-semibold text-foreground">加载仪表盘失败</h3>
+              <h3 className="text-xs font-semibold text-foreground">{t("overview.loadFailed")}</h3>
               <p className="text-xs text-muted-foreground leading-snug">
-                {getErrorMessage(error) || "无法连接到本地服务，请稍后重试。"}
+                {getErrorMessage(error) || t("overview.loadFailedDesc")}
               </p>
               <Button
                 size="sm"
@@ -494,7 +481,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
                 disabled={isRefreshing}
               >
                 <RefreshCw className={`h-3 w-3 mr-1 ${isRefreshing ? "animate-spin" : ""}`} />
-                重试
+                {t("overview.retry")}
               </Button>
             </div>
           </CardContent>
@@ -505,11 +492,11 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
       {!hasAccounts && !isError && (
         <Empty
           icon={<AlertTriangle className="h-8 w-8" />}
-          title="暂无启用的提供商"
-          description="点击下方按钮，配置你的第一个 LLM 凭据以实时监控配额。"
+          title={t("overview.emptyTitle")}
+          description={t("overview.emptyDesc")}
           action={
             <Button size="sm" onClick={onNavigateToProviders}>
-              添加提供商
+              {t("overview.addProvider")}
             </Button>
           }
         />
@@ -567,7 +554,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
                 </Badge>
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                当前周期配额的实时消耗速率及耗尽风险预估。
+                {t("overview.dialogDesc")}
               </DialogDescription>
             </DialogHeader>
 
@@ -602,46 +589,46 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
               {/* Stats Grid */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">窗口类型</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.windowType")}</span>
                   <span className="font-semibold text-foreground">{activeTier.quota.label}</span>
                 </div>
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">当前已用</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.currentUsage")}</span>
                   <span className="font-semibold text-foreground">
-                    {activeTier.quota.unlimited ? "无限额度" : `${activeTier.quota.utilization.toFixed(1)}%`}
+                    {activeTier.quota.unlimited ? t("overview.unlimitedQuota") : `${activeTier.quota.utilization.toFixed(1)}%`}
                   </span>
                 </div>
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">绝对额度</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.absoluteQuota")}</span>
                   <span className="font-semibold text-foreground">
                     {activeTier.quota.unlimited
-                      ? "无限额度"
+                      ? t("overview.unlimitedQuota")
                       : formatAbsoluteQuota(activeTier.quota) ?? "—"}
                   </span>
                 </div>
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">消耗速度</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.burnRate")}</span>
                   <span className="font-semibold text-foreground flex items-center gap-1">
                     {activeTier.quota.unlimited ? (
                       <span>—</span>
                     ) : (
                       <>
                         <TrendingUp className="h-3 w-3 text-status-warning" />
-                        {activeTier.forecast.ratePerHour.toFixed(1)}%/时
+                        {t("format.ratePerHour", { rate: activeTier.forecast.ratePerHour.toFixed(1) })}
                       </>
                     )}
                   </span>
                 </div>
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">重置周期</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.resetPeriod")}</span>
                   <span className="font-semibold text-foreground">
                     {activeTier.quota.resetsAt
                       ? formatTimeMargin(activeTier.quota.resetsAt)
-                      : "未知"}
+                      : t("status.unknown")}
                   </span>
                 </div>
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">预计重置时使用率</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.projectedAtReset")}</span>
                   <span className="font-semibold text-foreground">
                     {activeTier.quota.unlimited
                       ? "—"
@@ -649,14 +636,16 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
                   </span>
                 </div>
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">样本数</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.samples")}</span>
                   <span className="font-semibold text-foreground">
-                    {activeTier.forecast.sampleCount} 个样本 · 观察{" "}
-                    {activeTier.forecast.observationMinutes} 分钟
+                    {t("overview.samplesCount", {
+                      count: activeTier.forecast.sampleCount,
+                      minutes: activeTier.forecast.observationMinutes,
+                    })}
                   </span>
                 </div>
                 <div className="border border-border/50 rounded-lg p-2.5 bg-card/20 space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground block">预计耗尽</span>
+                  <span className="text-[10px] text-muted-foreground block">{t("overview.expectedExhaustion")}</span>
                   <span className="font-semibold text-foreground">
                     {activeTier.quota.unlimited
                       ? "—"
@@ -671,14 +660,16 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
               {activeTier.forecast.state === "at_risk" && (
                 <div className="border border-status-danger/10 bg-status-danger/5 rounded-lg p-2.5 text-xs text-status-danger space-y-1">
                   <p className="font-semibold flex items-center gap-1">
-                    <AlertTriangle className="h-3.5 w-3.5" /> 存在早于重置期的额度耗尽风险
+                    <AlertTriangle className="h-3.5 w-3.5" /> {t("overview.riskWarning")}
                   </p>
                   <p className="text-[10px] text-status-danger/80">
-                    按照目前 {activeTier.forecast.ratePerHour.toFixed(1)}%/小时 的消耗速度，额度将在{" "}
-                    {activeTier.forecast.exhaustionAt
-                      ? new Date(activeTier.forecast.exhaustionAt).toLocaleTimeString()
-                      : "未知"}
-                    （约 {formatTimeMargin(activeTier.forecast.exhaustionAt)} 后）耗尽，而重置发生在此之后。
+                    {t("overview.riskWarningDesc", {
+                      rate: activeTier.forecast.ratePerHour.toFixed(1),
+                      time: activeTier.forecast.exhaustionAt
+                        ? new Date(activeTier.forecast.exhaustionAt).toLocaleTimeString()
+                        : t("status.unknown"),
+                      margin: formatTimeMargin(activeTier.forecast.exhaustionAt),
+                    })}
                   </p>
                 </div>
               )}
@@ -686,7 +677,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
               {/* Utilization Line Chart */}
               <div className="space-y-1.5">
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                  近 24 小时已用额度趋势
+                  {t("overview.historyTitle")}
                 </span>
 
                 {isLoadingHistory ? (
@@ -722,7 +713,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
                         <Line
                           type="monotone"
                           dataKey="utilization"
-                          name="已用比例"
+                          name={t("overview.historyUsedRatio")}
                           stroke={
                             activeTier.forecast.state === "exhausted" ||
                             activeTier.quota.utilization >= 90
@@ -740,8 +731,8 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
                   </div>
                 ) : (
                   <Empty
-                    title="暂无历史趋势数据"
-                    description="开始消耗额度后，历史用量柱/线图将在此展示。"
+                    title={t("overview.historyEmptyTitle")}
+                    description={t("overview.historyEmptyDesc")}
                     className="h-[140px] py-4"
                   />
                 )}
