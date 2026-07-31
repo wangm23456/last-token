@@ -27,7 +27,6 @@ pub struct AppState {
     pub secret_store: Arc<dyn SecretStore>,
     pub client: reqwest::Client,
     pub gemini_token_cache: Mutex<HashMap<String, (String, i64)>>,
-    pub tray_state: Mutex<Option<crate::tray::TrayState>>,
     pub refresh_lock: tokio::sync::Mutex<()>,
     pub refresh_in_progress: std::sync::atomic::AtomicBool,
     /// Per-account last refresh failure message, cleared on the next
@@ -60,7 +59,6 @@ pub async fn refresh_all_action(app: &AppHandle) -> Result<DashboardSnapshot, Ap
 
     // Emit refresh status change to UI
     if let Ok(snap) = get_dashboard_snapshot(app, true) {
-        let _ = crate::tray::update_tray_menu(app, &snap);
         let _ = app.emit("quota-updated", &snap);
     }
 
@@ -168,8 +166,7 @@ pub async fn refresh_all_action(app: &AppHandle) -> Result<DashboardSnapshot, Ap
         eprintln!("process_alerts failed: {e}");
     }
 
-    // Update tray and notify UI
-    let _ = crate::tray::update_tray_menu(app, &snapshot);
+    // Notify UI surfaces (main window + tray panel)
     let _ = app.emit("quota-updated", &snapshot);
 
     Ok(snapshot)
@@ -447,6 +444,15 @@ async fn open_main_window(app: AppHandle) -> Result<(), AppError> {
     Ok(())
 }
 
+#[tauri::command]
+async fn quit_app(app: AppHandle) -> Result<(), AppError> {
+    if let Some(panel) = app.get_webview_window(crate::tray::TRAY_PANEL_LABEL) {
+        let _ = panel.hide();
+    }
+    app.exit(0);
+    Ok(())
+}
+
 fn parse_credential_source(s: &str) -> CredentialSource {
     match s {
         "cli_auto" => CredentialSource::CliAuto,
@@ -691,9 +697,8 @@ async fn delete_account(app: AppHandle, account_id: String) -> Result<(), AppErr
         AppError::new("database_error", e.to_string(), false)
     })?;
 
-    // Immediately remove from tray and notify
+    // Notify UI surfaces immediately after deletion
     if let Ok(snap) = get_dashboard_snapshot(&app, false) {
-        let _ = crate::tray::update_tray_menu(&app, &snap);
         let _ = app.emit("quota-updated", &snap);
     }
 
@@ -1089,9 +1094,8 @@ async fn update_account_order(app: AppHandle, order: Vec<String>) -> Result<(), 
     state.db.update_account_order(&order).map_err(|e| {
         AppError::new("database_error", e.to_string(), false)
     })?;
-    // Rebuild native tray menu immediately so right-click order matches overview.
+    // Notify UI surfaces so overview/tray panel pick up the new order.
     if let Ok(snap) = get_dashboard_snapshot(&app, false) {
-        let _ = crate::tray::update_tray_menu(&app, &snap);
         let _ = app.emit("quota-updated", &snap);
     }
     Ok(())
@@ -1176,7 +1180,6 @@ pub fn run() {
                 secret_store,
                 client,
                 gemini_token_cache: Mutex::new(HashMap::new()),
-                tray_state: Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
                 refresh_in_progress: std::sync::atomic::AtomicBool::new(false),
                 refresh_failures: Mutex::new(HashMap::new()),
@@ -1230,6 +1233,8 @@ pub fn run() {
             get_tier_history,
             refresh_all,
             open_main_window,
+            quit_app,
+            crate::tray::set_tray_panel_height,
             list_accounts,
             save_account,
             delete_account,

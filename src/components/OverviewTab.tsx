@@ -253,7 +253,7 @@ export function OverviewTab({ onNavigateToSettings, onNavigateToProviders }: Ove
 
   // Manual order wins when present; otherwise sort by risk severity.
   // While settings are still loading, trust the backend-ordered snapshot so we
-  // do not briefly re-sort by risk and diverge from tray/native menu.
+  // do not briefly re-sort by risk and diverge from the tray panel.
   const sortedAccounts = React.useMemo<AccountDashboard[]>(() => {
     if (!dashboard) return [];
     if (settings === undefined) return dashboard.accounts;

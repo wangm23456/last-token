@@ -16,6 +16,8 @@ vi.mock("@/lib/backend", () => ({
   refreshAll: vi.fn(),
   getTierHistory: vi.fn(),
   openMainWindow: vi.fn(),
+  quitApp: vi.fn(),
+  setTrayPanelHeight: vi.fn(),
 }));
 
 // The hook dynamically imports @tauri-apps/api/event inside an effect.
@@ -26,7 +28,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: (..._args: unknown[]) => listenSpy(..._args),
 }));
 
-import { getDashboard, refreshAll, openMainWindow } from "@/lib/backend";
+import { getDashboard, refreshAll, openMainWindow, quitApp, setTrayPanelHeight } from "@/lib/backend";
 
 const NOW = Date.now();
 
@@ -158,6 +160,15 @@ function renderWithProviders(ui: React.ReactNode) {
 
 describe("TrayPanel", () => {
   beforeEach(() => {
+    // jsdom may not implement ResizeObserver; tray auto-height no-ops without it.
+    if (typeof globalThis.ResizeObserver === "undefined") {
+      globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+
     vi.clearAllMocks();
     listenSpy.mockReset();
     listenSpy.mockResolvedValue(() => {});
@@ -290,4 +301,40 @@ describe("TrayPanel", () => {
       copilot.compareDocumentPosition(claude) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
+
+  it("quits the app from the tray footer", async () => {
+    vi.mocked(getDashboard).mockResolvedValue(baseSnapshot);
+    vi.mocked(refreshAll).mockResolvedValue(baseSnapshot);
+    vi.mocked(quitApp).mockResolvedValue(undefined);
+
+    renderWithProviders(<TrayPanel />);
+
+    const quitButton = await screen.findByRole("button", { name: /退出|Quit/i });
+    fireEvent.click(quitButton);
+    expect(quitApp).toHaveBeenCalledTimes(1);
+  });
+  it("requests a content-sized tray panel height after render", async () => {
+    vi.mocked(getDashboard).mockResolvedValue(baseSnapshot);
+    vi.mocked(refreshAll).mockResolvedValue(baseSnapshot);
+    vi.mocked(setTrayPanelHeight).mockResolvedValue(undefined);
+
+    // Provide a measurable scrollHeight for the sync effect.
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return 280;
+      },
+    });
+
+    renderWithProviders(<TrayPanel />);
+    await screen.findByText("Claude Pro");
+
+    await waitFor(() => {
+      expect(setTrayPanelHeight).toHaveBeenCalled();
+    });
+    const height = vi.mocked(setTrayPanelHeight).mock.calls.at(-1)?.[0];
+    expect(height).toBeGreaterThanOrEqual(96);
+    expect(height).toBeLessThanOrEqual(520);
+  });
+
 });

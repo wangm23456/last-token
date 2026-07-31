@@ -24,7 +24,16 @@
     "learning": "Analyzing Rate",
     "safe": "Quota Sufficient",
     "error": "Query Error",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "short": {
+      "exhausted": "Exhausted",
+      "atRisk": "Risk",
+      "unknownReset": "Unknown",
+      "learning": "Learning",
+      "safe": "Safe",
+      "error": "Error",
+      "unknown": "Unknown"
+    }
   },
   "overview": {
     "header": "Status Panel",
@@ -70,16 +79,19 @@
     "unlimitedQuota": "Unlimited Quota"
   },
   "tray": {
-    "earliestRisk": "Earliest Risk Alert",
-    "allSafe": "All plans are safe",
-    "noProviders": "No enabled providers",
+    "earliestRisk": "Top risk",
+    "allSafe": "All safe",
+    "noProviders": "No providers",
     "loading": "Loading…",
     "noQuota": "No active quota data.",
     "credentialError": "Provider credential load failed.",
     "refresh": "Refresh now",
-    "openMain": "Open main window",
+    "openMain": "Main",
+    "quit": "Quit",
     "refreshAria": "Refresh quota",
-    "emptyHint": "Click \"Open main window\" to configure your first provider."
+    "quitAria": "Quit application",
+    "emptyHint": "Click Main to configure your first provider.",
+    "openMainAria": "Open main window"
   },
   "settings": {
     "title": "Settings",
@@ -278,7 +290,10 @@
     "ratePerHour": "{{rate}}%/hour",
     "rateAnalyzing": "Analyzing...",
     "resetsIn": "Resets in {{time}}",
-    "resetUnknown": "Reset time not specified"
+    "resetUnknown": "Reset time not specified",
+    "hoursShort": "{{h}}h",
+    "hoursMinutesShort": "{{h}}h{{m}}m",
+    "exhaustsIn": "Exhausts in {{time}}"
   },
   "refresh": {
     "success": "Refreshed successfully",

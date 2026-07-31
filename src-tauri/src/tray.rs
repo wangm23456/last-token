@@ -1,80 +1,45 @@
-use std::collections::HashMap;
+use std::sync::Mutex;
+
 use tauri::{
+    AppHandle, LogicalSize, Manager, PhysicalPosition, Rect, Size, State,
     image::Image,
-    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, PhysicalPosition, Rect, WebviewUrl, WebviewWindowBuilder,
+    webview::WebviewWindowBuilder,
+    WebviewUrl,
 };
-use crate::domain::{apply_account_order, leading_tier, risk_severity, DashboardSnapshot, RiskState, ProviderKind, CredentialStatus};
-use crate::AppState;
 
 pub const TRAY_ID: &str = "last-token-tray";
 pub const TRAY_PANEL_LABEL: &str = "tray-panel";
+pub const TRAY_PANEL_WIDTH: f64 = 254.0; // ~2/3 of previous 380
+pub const TRAY_PANEL_MIN_HEIGHT: f64 = 96.0;
+pub const TRAY_PANEL_MAX_HEIGHT: f64 = 520.0;
 
-pub struct TrayState {
-    pub global_item: MenuItem<tauri::Wry>,
-    pub account_items: HashMap<String, MenuItem<tauri::Wry>>,
-    /// Enabled account ids in the currently rendered menu order.
-    pub ordered_account_ids: Vec<String>,
-    pub refresh_item: MenuItem<tauri::Wry>,
+/// Last tray-icon rect used to re-anchor after content-driven resize.
+pub struct TrayPanelAnchor {
+    icon: Mutex<Option<(f64, f64, f64, f64)>>,
 }
 
-// Format duration in epoch milliseconds to human readable string (e.g. "2h", "45m")
-fn format_duration(ms: i64) -> String {
-    let secs = ms / 1000;
-    if secs <= 0 {
-        return "0s".to_string();
-    }
-    let hours = secs / 3600;
-    let mins = (secs % 3600) / 60;
-    if hours > 0 {
-        format!("{}h{}m", hours, mins)
-    } else {
-        format!("{}m", mins)
+impl Default for TrayPanelAnchor {
+    fn default() -> Self {
+        Self {
+            icon: Mutex::new(None),
+        }
     }
 }
 
-fn now_millis() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
-}
-
-// Format absolute time margin (resets_at) for global summary
-fn format_absolute_time(ms: i64) -> String {
-    let datetime = match chrono::DateTime::from_timestamp(ms / 1000, 0) {
-        Some(dt) => dt.with_timezone(&chrono::Local),
-        None => return "".to_string(),
-    };
-    
-    let now = chrono::Local::now();
-    if datetime.date_naive() == now.date_naive() {
-        datetime.format("%H:%M").to_string()
-    } else {
-        datetime.format("%m-%d %H:%M").to_string()
+pub fn clamp_panel_height(height: f64) -> f64 {
+    if !height.is_finite() {
+        return TRAY_PANEL_MIN_HEIGHT;
     }
+    height.clamp(TRAY_PANEL_MIN_HEIGHT, TRAY_PANEL_MAX_HEIGHT)
 }
 
-fn provider_label(p: ProviderKind) -> &'static str {
-    match p {
-        ProviderKind::Claude => "Claude",
-        ProviderKind::Codex => "Codex",
-        ProviderKind::Gemini => "Gemini",
-        ProviderKind::Copilot => "Copilot",
-        ProviderKind::Kimi => "Kimi",
-        ProviderKind::Zhipu => "Zhipu",
-        ProviderKind::ZhipuTeam => "Zhipu Team",
-        ProviderKind::Minimax => "MiniMax",
-        ProviderKind::Zenmux => "ZenMux",
-        ProviderKind::Volcengine => "Volcengine",
-    }
-}
-
-/// Only a left-button release toggles the panel — press and release of one
-/// click are two events, so filtering on Up prevents double toggling.
+/// Toggle the panel on left or right button release. Press and release of one
+/// click are two events, so filtering on Up prevents double toggling. Right
+/// click also opens the panel now that the native menu is gone.
 pub fn should_toggle_panel(button: MouseButton, button_state: MouseButtonState) -> bool {
-    button == MouseButton::Left && button_state == MouseButtonState::Up
+    matches!(button, MouseButton::Left | MouseButton::Right)
+        && button_state == MouseButtonState::Up
 }
 
 /// Pure geometry: anchor the panel to the tray icon inside the monitor work
@@ -104,30 +69,23 @@ pub fn compute_panel_position(
     (x, y)
 }
 
-fn toggle_tray_panel(app: &AppHandle, rect: &Rect) {
-    let Some(panel) = app.get_webview_window(TRAY_PANEL_LABEL) else {
-        return;
+fn icon_rect_from(rect: &Rect) -> (f64, f64, f64, f64) {
+    let (px, py) = match rect.position {
+        tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+        tauri::Position::Logical(l) => (l.x, l.y),
     };
-    if panel.is_visible().unwrap_or(false) {
-        let _ = panel.hide();
-        return;
-    }
+    let (sw, sh) = match rect.size {
+        tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
+        tauri::Size::Logical(s) => (s.width, s.height),
+    };
+    (px, py, sw, sh)
+}
 
-    let icon = {
-        let (px, py) = match rect.position {
-            tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
-            tauri::Position::Logical(l) => (l.x, l.y),
-        };
-        let (sw, sh) = match rect.size {
-            tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
-            tauri::Size::Logical(s) => (s.width, s.height),
-        };
-        (px, py, sw, sh)
-    };
+fn position_panel_at_icon(app: &AppHandle, panel: &tauri::WebviewWindow, icon: (f64, f64, f64, f64)) {
     let panel_size = panel
         .outer_size()
         .map(|s| (s.width as f64, s.height as f64))
-        .unwrap_or((380.0, 520.0));
+        .unwrap_or((TRAY_PANEL_WIDTH, TRAY_PANEL_MAX_HEIGHT));
     let monitor = app
         .monitor_from_point(icon.0, icon.1)
         .ok()
@@ -147,12 +105,56 @@ fn toggle_tray_panel(app: &AppHandle, rect: &Rect) {
         );
         let _ = panel.set_position(PhysicalPosition::new(x, y));
     }
+}
+
+fn toggle_tray_panel(app: &AppHandle, rect: &Rect) {
+    let Some(panel) = app.get_webview_window(TRAY_PANEL_LABEL) else {
+        return;
+    };
+    if panel.is_visible().unwrap_or(false) {
+        let _ = panel.hide();
+        return;
+    }
+
+    let icon = icon_rect_from(rect);
+    if let Some(anchor) = app.try_state::<TrayPanelAnchor>() {
+        if let Ok(mut guard) = anchor.icon.lock() {
+            *guard = Some(icon);
+        }
+    }
+    position_panel_at_icon(app, &panel, icon);
     let _ = panel.show();
     let _ = panel.set_focus();
 }
 
-/// Shared path for the tray menu item and the panel footer button:
-/// hide the panel first, then surface the main window.
+/// Resize the tray panel to fit measured content height, then re-anchor to the
+/// last tray icon click so above-icon layouts stay glued when height changes.
+#[tauri::command]
+pub fn set_tray_panel_height(
+    app: AppHandle,
+    height: f64,
+    anchor: State<'_, TrayPanelAnchor>,
+) -> Result<(), String> {
+    let Some(panel) = app.get_webview_window(TRAY_PANEL_LABEL) else {
+        return Ok(());
+    };
+    let clamped = clamp_panel_height(height);
+    panel
+        .set_size(Size::Logical(LogicalSize::new(TRAY_PANEL_WIDTH, clamped)))
+        .map_err(|e| e.to_string())?;
+
+    if panel.is_visible().unwrap_or(false) {
+        if let Ok(guard) = anchor.icon.lock() {
+            if let Some(icon) = *guard {
+                position_panel_at_icon(&app, &panel, icon);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Shared path for the panel footer button: hide the panel first, then
+/// surface the main window.
 pub fn show_main_window(app: &AppHandle) {
     if let Some(panel) = app.get_webview_window(TRAY_PANEL_LABEL) {
         let _ = panel.hide();
@@ -194,7 +196,7 @@ fn create_tray_panel(app: &AppHandle) -> Result<(), tauri::Error> {
         WebviewUrl::App("index.html?surface=tray".into()),
     )
     .title("Last Token")
-    .inner_size(380.0, 520.0)
+    .inner_size(TRAY_PANEL_WIDTH, TRAY_PANEL_MIN_HEIGHT)
     .resizable(false)
     .maximizable(false)
     .minimizable(false)
@@ -208,30 +210,15 @@ fn create_tray_panel(app: &AppHandle) -> Result<(), tauri::Error> {
 }
 
 pub fn create_tray(app: &AppHandle) -> Result<(), tauri::Error> {
-    let app_state = app.state::<AppState>();
-    
-    // Create initial empty menu
-    let global_item = MenuItem::with_id(app, "global_summary", "所有套餐安全", false, None::<&str>)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let refresh_item = MenuItem::with_id(app, "refresh", "刷新中...", true, None::<&str>)?;
-    let open_item = MenuItem::with_id(app, "open_main", "打开主界面", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "退出 Last Token", true, None::<&str>)?;
-    
-    let menu = Menu::with_items(app, &[
-        &global_item,
-        &sep1,
-        &refresh_item,
-        &open_item,
-        &quit_item,
-    ])?;
+    if app.try_state::<TrayPanelAnchor>().is_none() {
+        app.manage(TrayPanelAnchor::default());
+    }
 
     let icon_bytes = include_bytes!("../icons/32x32.png");
     let icon = Image::from_bytes(icon_bytes)?;
 
     let mut tray_builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Last Token")
-        .menu(&menu)
-        .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button,
@@ -243,24 +230,6 @@ pub fn create_tray(app: &AppHandle) -> Result<(), tauri::Error> {
                 if should_toggle_panel(button, button_state) {
                     toggle_tray_panel(tray.app_handle(), &rect);
                 }
-            }
-        })
-        .on_menu_event(|app, event| {
-            let id = event.id.0.as_str();
-            match id {
-                "refresh" => {
-                    let app_clone = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = crate::refresh_all_action(&app_clone).await;
-                    });
-                }
-                "open_main" => {
-                    show_main_window(app);
-                }
-                "quit" => {
-                    app.exit(0);
-                }
-                _ => {}
             }
         });
 
@@ -299,253 +268,6 @@ pub fn create_tray(app: &AppHandle) -> Result<(), tauri::Error> {
             let _ = main_window_clone.hide();
         });
     }
-
-
-    // Cache handles
-    let mut ts = app_state.tray_state.lock();
-    *ts = Some(TrayState {
-        global_item,
-        account_items: HashMap::new(),
-        ordered_account_ids: Vec::new(),
-        refresh_item,
-    });
-
-    Ok(())
-}
-
-pub fn update_tray_menu(app: &AppHandle, snapshot: &DashboardSnapshot) -> Result<(), tauri::Error> {
-    let app_state = app.state::<AppState>();
-
-    // Align native tray rows with overview/tray-panel order.
-    let account_order = app_state
-        .db
-        .get_settings()
-        .map(|s| s.account_order)
-        .unwrap_or_default();
-    let ordered_accounts = apply_account_order(&snapshot.accounts, &account_order);
-    let ordered_enabled_ids: Vec<String> = ordered_accounts
-        .iter()
-        .filter(|a| a.account.enabled)
-        .map(|a| a.account.id.clone())
-        .collect();
-
-    // Rebuild when membership OR display order changes.
-    let rebuild_needed = {
-        let ts_guard = app_state.tray_state.lock();
-        match &*ts_guard {
-            Some(ts) => ts.ordered_account_ids != ordered_enabled_ids,
-            None => true,
-        }
-    };
-
-    if rebuild_needed {
-        // Rebuild full menu hierarchy
-        let global_item = MenuItem::with_id(app, "global_summary", "所有套餐安全", false, None::<&str>)?;
-        let sep1 = PredefinedMenuItem::separator(app)?;
-        
-        let mut account_items = HashMap::new();
-        let mut menu_items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
-        menu_items.push(Box::new(global_item.clone()));
-        menu_items.push(Box::new(sep1));
-        
-        // Add row for each enabled account in shared overview order
-        for acc in &ordered_accounts {
-            if !acc.account.enabled {
-                continue;
-            }
-            let id = format!("acc_row_{}", acc.account.id);
-            let item = MenuItem::with_id(app, &id, &format!("{} - 载入中...", acc.account.display_name), false, None::<&str>)?;
-            account_items.insert(acc.account.id.clone(), item.clone());
-            menu_items.push(Box::new(item));
-        }
-        
-        let sep2 = PredefinedMenuItem::separator(app)?;
-        menu_items.push(Box::new(sep2));
-        
-        let refresh_text = if snapshot.refresh_in_progress { "刷新中..." } else { "立即刷新" };
-        let refresh_item = MenuItem::with_id(app, "refresh", refresh_text, !snapshot.refresh_in_progress, None::<&str>)?;
-        menu_items.push(Box::new(refresh_item.clone()));
-        
-        let open_item = MenuItem::with_id(app, "open_main", "打开主界面", true, None::<&str>)?;
-        menu_items.push(Box::new(open_item));
-        let quit_item = MenuItem::with_id(app, "quit", "退出 Last Token", true, None::<&str>)?;
-        menu_items.push(Box::new(quit_item));
-        
-        let menu_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = menu_items.iter().map(|item| item.as_ref()).collect();
-        let new_menu = Menu::with_items(app, &menu_refs)?;
-        
-        if let Some(tray) = app.tray_by_id(TRAY_ID) {
-            let _ = tray.set_menu(Some(new_menu));
-        }
-        
-        let mut ts_guard = app_state.tray_state.lock();
-        *ts_guard = Some(TrayState {
-            global_item,
-            account_items,
-            ordered_account_ids: ordered_enabled_ids,
-            refresh_item,
-        });
-    }
-
-    // Now, update labels in place using the cached handles
-    let ts_guard = app_state.tray_state.lock();
-    let ts = match &*ts_guard {
-        Some(t) => t,
-        None => return Ok(()),
-    };
-
-    // 1. Update Global Summary Item
-    // Global copy rules:
-    // - 最早风险: <provider> <tier> · <time> (for exhausted/at-risk)
-    // - N 个周期待确认 (unknown_reset states)
-    // - N 个账户查询失败 (error states)
-    // - 正在学习消耗速度 (learning states)
-    // - 所有套餐安全 (safe states)
-    //
-    // "Worst" across accounts is selected by `risk_severity` (exhausted >
-    // at_risk > unknown_reset > error > learning > safe); a tie is broken
-    // by the earliest exhaustion/reset time. This keeps an Exhausted tier
-    // ahead of a less-severe AtRisk tier even when the latter would
-    // exhaust first by raw time.
-    let mut worst_severity: i32 = -1;
-    let mut earliest_risk_time = i64::MAX;
-    let mut earliest_risk_info: Option<(ProviderKind, &str, bool)> = None;
-    let mut unknown_reset_count = 0;
-    let mut error_count = 0;
-    let mut learning_count = 0;
-
-    for acc in &snapshot.accounts {
-        if !acc.account.enabled {
-            continue;
-        }
-        if acc.credential_status != CredentialStatus::Valid {
-            error_count += 1;
-            continue;
-        }
-        if acc.error.is_some() {
-            error_count += 1;
-            continue;
-        }
-        for tier in &acc.tiers {
-            match tier.forecast.state {
-                RiskState::Exhausted | RiskState::AtRisk => {
-                    let severity = risk_severity(tier.forecast.state);
-                    let ex_at = tier.forecast.exhaustion_at.unwrap_or(i64::MAX);
-                    let is_exhausted = matches!(tier.forecast.state, RiskState::Exhausted);
-                    if severity > worst_severity
-                        || (severity == worst_severity && ex_at < earliest_risk_time)
-                    {
-                        worst_severity = severity;
-                        earliest_risk_time = ex_at;
-                        earliest_risk_info =
-                            Some((acc.account.provider, tier.quota.id.as_str(), is_exhausted));
-                    }
-                }
-                RiskState::UnknownReset => {
-                    unknown_reset_count += 1;
-                }
-                RiskState::Learning => {
-                    learning_count += 1;
-                }
-                RiskState::Safe | RiskState::Error => {}
-            }
-        }
-    }
-
-    let global_text = if let Some((prov, tier_id, is_exhausted)) = earliest_risk_info {
-        let label = provider_label(prov);
-        let time_str = format_absolute_time(earliest_risk_time);
-        if is_exhausted {
-            format!("最早风险: {} {} · 已耗尽", label, tier_id)
-        } else {
-            format!("最早风险: {} {} · {}", label, tier_id, time_str)
-        }
-    } else if unknown_reset_count > 0 {
-        format!("{} 个周期待确认", unknown_reset_count)
-    } else if error_count > 0 {
-        format!("{} 个账户查询失败", error_count)
-    } else if learning_count > 0 {
-        "正在学习消耗速度".to_string()
-    } else {
-        "所有套餐安全".to_string()
-    };
-
-    let _ = ts.global_item.set_text(&global_text);
-
-    // 2. Update each enabled account's worst tier row
-    for acc in &snapshot.accounts {
-        if !acc.account.enabled {
-            continue;
-        }
-        let menu_item = match ts.account_items.get(&acc.account.id) {
-            Some(i) => i,
-            None => continue,
-        };
-
-        let label = &acc.account.display_name;
-
-        if acc.credential_status != CredentialStatus::Valid {
-            let err_msg = match acc.credential_status {
-                CredentialStatus::Expired => "凭据已过期",
-                CredentialStatus::NotFound => "凭据未找到",
-                CredentialStatus::ParseError => "凭据解析失败",
-                CredentialStatus::Unavailable => "凭据服务不可用",
-                _ => "凭据错误",
-            };
-            let _ = menu_item.set_text(&format!("🔴 {}: {}", label, err_msg));
-            continue;
-        }
-
-        if let Some(ref err) = acc.error {
-            let _ = menu_item.set_text(&format!("🔴 {}: {}", label, err));
-            continue;
-        }
-
-        if acc.tiers.is_empty() {
-            let _ = menu_item.set_text(&format!("⚪ {}: 无额度信息", label));
-            continue;
-        }
-
-        // Find worst tier (shared severity semantics)
-        let Some(worst_tier) = leading_tier(&acc.tiers) else {
-            let _ = menu_item.set_text(&format!("⚪ {}: 无额度信息", label));
-            continue;
-        };
-
-        let u_val = worst_tier.quota.utilization;
-        let t_id = &worst_tier.quota.id;
-        
-        let row_text = match worst_tier.forecast.state {
-            RiskState::Exhausted => {
-                format!("🔴 {}: {} 已耗尽", label, t_id)
-            }
-            RiskState::AtRisk => {
-                let dur_str = worst_tier.forecast.exhaustion_at
-                    .map(|e_at| format_duration(e_at - now_millis()))
-                    .unwrap_or_else(|| "0s".to_string());
-                format!("🔴 {}: {} {:.1}% · {}后耗尽", label, t_id, u_val, dur_str)
-            }
-            RiskState::UnknownReset => {
-                format!("⚪ {}: {} {:.1}% · 重置未知", label, t_id, u_val)
-            }
-            RiskState::Learning => {
-                format!("🔵 {}: {} {:.1}% · 学习速度中", label, t_id, u_val)
-            }
-            RiskState::Safe => {
-                format!("🟢 {}: {} {:.1}% · 安全", label, t_id, u_val)
-            }
-            RiskState::Error => {
-                format!("🔴 {}: {} 错误", label, t_id)
-            }
-        };
-
-        let _ = menu_item.set_text(&row_text);
-    }
-
-    // 3. Update refresh item state
-    let refresh_label = if snapshot.refresh_in_progress { "刷新中..." } else { "立即刷新" };
-    let _ = ts.refresh_item.set_text(refresh_label);
-    let _ = ts.refresh_item.set_enabled(!snapshot.refresh_in_progress);
 
     Ok(())
 }

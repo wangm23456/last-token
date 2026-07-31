@@ -116,6 +116,15 @@ export function formatAbsoluteQuota(tier: QuotaTier): string | null {
   return `${used} / ${limit}${unit ? ` ${unit}` : ""}`;
 }
 
+const STATUS_I18N_KEY: Record<RiskState, string> = {
+  exhausted: "exhausted",
+  at_risk: "atRisk",
+  unknown_reset: "unknownReset",
+  learning: "learning",
+  safe: "safe",
+  error: "error",
+};
+
 export function statusColorClass(state: RiskState): string {
   switch (state) {
     case "exhausted":
@@ -135,8 +144,59 @@ export function statusColorClass(state: RiskState): string {
   }
 }
 
+export function statusAccentClass(state: RiskState | "error"): string {
+  switch (state) {
+    case "exhausted":
+    case "error":
+      return "border-l-status-danger";
+    case "at_risk":
+      return "border-l-status-warning";
+    case "learning":
+      return "border-l-status-stale";
+    case "unknown_reset":
+      return "border-l-muted-foreground";
+    default:
+      return "border-l-status-safe";
+  }
+}
+
+export function statusTintClass(state: RiskState | "error"): string {
+  switch (state) {
+    case "exhausted":
+    case "error":
+      return "bg-status-danger/10";
+    case "at_risk":
+      return "bg-status-warning/10";
+    case "learning":
+      return "bg-status-stale/10";
+    case "unknown_reset":
+      return "bg-secondary/60";
+    default:
+      return "bg-status-safe/10";
+  }
+}
+
 export function statusText(state: RiskState): string {
-  return i18n.t(`status.${state}`);
+  return i18n.t(`status.${STATUS_I18N_KEY[state] ?? "unknown"}`);
+}
+
+export function statusTextShort(state: RiskState): string {
+  return i18n.t(`status.short.${STATUS_I18N_KEY[state] ?? "unknown"}`);
+}
+
+export function formatTimeMarginShort(ms: number | null): string {
+  if (ms == null) return "";
+  const t = i18n.t.bind(i18n);
+  const diff = ms - Date.now();
+  if (diff <= 0) return t("format.zeroMinutes");
+  const hours = Math.floor(diff / 3600000);
+  const mins = Math.floor((diff % 3600000) / 60000);
+  if (hours > 0) {
+    return mins > 0
+      ? t("format.hoursMinutesShort", { h: hours, m: mins })
+      : t("format.hoursShort", { h: hours });
+  }
+  return t("format.minutesShort", { n: mins });
 }
 
 function progressOverlayColor(tier: TierDashboard): string {
@@ -147,6 +207,17 @@ function progressOverlayColor(tier: TierDashboard): string {
     return "bg-status-warning";
   }
   return "bg-status-safe";
+}
+
+function utilizationTextClass(tier: TierDashboard): string {
+  if (tier.quota.unlimited) return "text-status-safe";
+  if (tier.forecast.state === "exhausted" || tier.quota.utilization >= 90) {
+    return "text-status-danger";
+  }
+  if (tier.forecast.state === "at_risk" || tier.quota.utilization >= 70) {
+    return "text-status-warning";
+  }
+  return "text-foreground";
 }
 
 // ── QuotaTierList component ─────────────────────────────────────────
@@ -179,11 +250,11 @@ export function QuotaTierList({
 
   return (
     <div
-      className={cn("flex flex-col gap-1.5", className)}
+      className={cn(compact ? "flex flex-col gap-0.5" : "flex flex-col gap-1.5", className)}
       data-testid="quota-tier-list"
       data-tier-count={sorted.length}
     >
-      {sorted.map((tier) => {
+            {sorted.map((tier) => {
         const quota = tier.quota;
         const isUnlimited = quota.unlimited;
         const isSelected = selectedTierId === quota.id;
@@ -193,17 +264,84 @@ export function QuotaTierList({
             ? t("format.rateAnalyzing")
             : t("format.ratePerHour", { rate: tier.forecast.ratePerHour.toFixed(1) });
         const resetText = quota.resetsAt
-          ? t("format.resetsIn", { time: formatTimeMargin(quota.resetsAt) })
+          ? t("format.resetsIn", {
+              time: compact
+                ? formatTimeMarginShort(quota.resetsAt)
+                : formatTimeMargin(quota.resetsAt),
+            })
           : t("format.resetUnknown");
+        const exhaustionText =
+          tier.forecast.exhaustionAt != null
+            ? t("format.exhaustsIn", {
+                time: compact
+                  ? formatTimeMarginShort(tier.forecast.exhaustionAt)
+                  : formatTimeMargin(tier.forecast.exhaustionAt),
+              })
+            : null;
 
-        const body = (
+        const primaryMeta = isUnlimited
+          ? t("status.safe")
+          : tier.forecast.state === "exhausted"
+            ? t("status.exhausted")
+            : tier.forecast.state === "at_risk" && exhaustionText
+              ? exhaustionText
+              : resetText;
+        const primaryMetaClass =
+          tier.forecast.state === "exhausted" || tier.forecast.state === "error"
+            ? "text-status-danger font-medium"
+            : tier.forecast.state === "at_risk"
+              ? "text-status-warning font-medium"
+              : "text-muted-foreground";
+
+        const body = compact ? (
           <>
-            <div
-              className={cn(
-                "flex items-center justify-between gap-2",
-                compact ? "text-[10px]" : "text-[11px]"
+            <div className="flex items-center justify-between gap-2 text-[10px] leading-tight">
+              <span className="font-medium text-foreground truncate min-w-0">
+                {quota.label}
+              </span>
+              {isUnlimited ? (
+                <span className="font-bold tabular-nums text-status-safe shrink-0">
+                  {t("overview.unlimitedQuota")}
+                </span>
+              ) : (
+                <span
+                  className={cn(
+                    "font-bold tabular-nums shrink-0",
+                    utilizationTextClass(tier)
+                  )}
+                >
+                  {quota.utilization.toFixed(0)}%
+                </span>
               )}
-            >
+            </div>
+
+            {!isUnlimited && (
+              <div className="relative h-1 w-full rounded-full bg-secondary/80 overflow-hidden">
+                <div
+                  className={cn("absolute inset-y-0 left-0 rounded-full", progressOverlayColor(tier))}
+                  style={{ width: `${Math.min(100, Math.max(0, quota.utilization))}%` }}
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 text-[9px] leading-tight">
+              <span className={cn("truncate", primaryMetaClass)}>{primaryMeta}</span>
+              {!isUnlimited &&
+              tier.forecast.state !== "at_risk" &&
+              tier.forecast.state !== "exhausted" ? (
+                <span className="text-muted-foreground/80 tabular-nums shrink-0">
+                  {rateText}
+                </span>
+              ) : absolute ? (
+                <span className="text-muted-foreground/80 tabular-nums shrink-0">
+                  {absolute}
+                </span>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-2 text-[11px]">
               <span className="font-medium text-foreground truncate">
                 {quota.label}
               </span>
@@ -218,16 +356,10 @@ export function QuotaTierList({
 
             {!isUnlimited && (
               <div className="relative">
+                <div className="w-full rounded-full bg-secondary h-1.5" />
                 <div
                   className={cn(
-                    "w-full rounded-full bg-secondary",
-                    compact ? "h-1" : "h-1.5"
-                  )}
-                />
-                <div
-                  className={cn(
-                    "absolute top-0 left-0 rounded-full",
-                    compact ? "h-1" : "h-1.5",
+                    "absolute top-0 left-0 rounded-full h-1.5",
                     progressOverlayColor(tier)
                   )}
                   style={{ width: `${Math.min(100, Math.max(0, quota.utilization))}%` }}
@@ -236,34 +368,39 @@ export function QuotaTierList({
             )}
 
             {absolute && (
-              <p
-                className={cn(
-                  "text-muted-foreground tabular-nums",
-                  compact ? "text-[9px]" : "text-[10px]"
-                )}
-              >
+              <p className="text-muted-foreground tabular-nums text-[10px]">
                 {absolute}
               </p>
             )}
 
-            <div
-              className={cn(
-                "flex justify-between text-muted-foreground",
-                compact ? "text-[9px]" : "text-[10px]"
-              )}
-            >
+            <div className="flex justify-between text-muted-foreground text-[10px]">
               <span>{isUnlimited ? t("status.safe") : rateText}</span>
-              <span>{resetText}</span>
+              <span className={cn(tier.forecast.state === "at_risk" && "text-status-warning font-medium")}>
+                {tier.forecast.state === "at_risk" && exhaustionText
+                  ? exhaustionText
+                  : resetText}
+              </span>
             </div>
           </>
         );
 
         const baseClass = cn(
-          "w-full text-left flex flex-col gap-1 rounded-md border transition-colors",
-          compact ? "p-2" : "p-2.5",
-          isSelected
-            ? "border-foreground/40 bg-secondary/60"
-            : "border-border/60 bg-card/30 hover:bg-card/55",
+          "w-full text-left flex flex-col transition-colors",
+          compact
+            ? cn(
+                "gap-0.5 rounded-sm border-0 bg-transparent px-1.5 py-1",
+                (tier.forecast.state === "exhausted" ||
+                  tier.forecast.state === "at_risk" ||
+                  tier.forecast.state === "error") &&
+                  statusTintClass(tier.forecast.state),
+                isSelected && "bg-secondary/50"
+              )
+            : cn(
+                "gap-1 rounded-md border p-2.5",
+                isSelected
+                  ? "border-foreground/40 bg-secondary/60"
+                  : "border-border/60 bg-card/30 hover:bg-card/55"
+              ),
           !interactive && "cursor-default"
         );
 
@@ -295,6 +432,7 @@ export function QuotaTierList({
           </button>
         );
       })}
+
     </div>
   );
 }

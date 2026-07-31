@@ -24,7 +24,16 @@
     "learning": "正在分析速率",
     "safe": "额度充足",
     "error": "查询错误",
-    "unknown": "未知"
+    "unknown": "未知",
+    "short": {
+      "exhausted": "耗尽",
+      "atRisk": "风险",
+      "unknownReset": "未知",
+      "learning": "学习",
+      "safe": "安全",
+      "error": "错误",
+      "unknown": "未知"
+    }
   },
   "overview": {
     "header": "状态面板",
@@ -70,16 +79,19 @@
     "unlimitedQuota": "无限额度"
   },
   "tray": {
-    "earliestRisk": "最早风险预警",
-    "allSafe": "所有套餐状态安全",
-    "noProviders": "暂无启用的提供商",
+    "earliestRisk": "最早风险",
+    "allSafe": "全部安全",
+    "noProviders": "暂无提供商",
     "loading": "加载中…",
     "noQuota": "暂无活跃配额监控数据。",
     "credentialError": "提供商凭证加载异常。",
     "refresh": "立即刷新",
-    "openMain": "打开主界面",
+    "openMain": "主界面",
+    "quit": "退出",
     "refreshAria": "刷新额度",
-    "emptyHint": "点击“打开主界面”配置你的第一个提供商。"
+    "quitAria": "退出应用",
+    "emptyHint": "点击「主界面」配置第一个提供商。",
+    "openMainAria": "打开主界面"
   },
   "settings": {
     "title": "设置",
@@ -277,8 +289,11 @@
     "hoursMinutes": "{{h}}小时{{m}}分钟",
     "ratePerHour": "{{rate}}%/时",
     "rateAnalyzing": "分析中...",
-    "resetsIn": "{{time}} 后重置",
-    "resetUnknown": "周期重置未指定"
+    "resetsIn": "{{time}}后重置",
+    "resetUnknown": "周期重置未指定",
+    "hoursShort": "{{h}}小时",
+    "hoursMinutesShort": "{{h}}小时{{m}}分",
+    "exhaustsIn": "{{time}}后耗尽"
   },
   "refresh": {
     "success": "刷新成功",

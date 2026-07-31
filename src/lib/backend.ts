@@ -118,3 +118,12 @@ export async function clearHistory(): Promise<void> {
 export async function openMainWindow(): Promise<void> {
   return safeInvoke<void>("open_main_window");
 }
+
+export async function quitApp(): Promise<void> {
+  return safeInvoke<void>("quit_app");
+}
+
+/** Resize the tray webview to the measured content height (clamped in Rust). */
+export async function setTrayPanelHeight(height: number): Promise<void> {
+  return safeInvoke<void>("set_tray_panel_height", { height });
+}

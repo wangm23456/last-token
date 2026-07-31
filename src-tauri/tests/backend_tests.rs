@@ -679,69 +679,89 @@ fn test_apply_account_order_manual_and_risk_fallback() {
 // ── Tray Pure Tests ──────────────────────────────────────────────
 
 #[test]
-fn test_tray_should_only_toggle_on_left_release() {
+fn test_tray_should_toggle_on_left_or_right_release() {
     use last_token_lib::tray::should_toggle_panel;
     use tauri::tray::{MouseButton, MouseButtonState};
 
     assert!(!should_toggle_panel(MouseButton::Left, MouseButtonState::Down));
     assert!(should_toggle_panel(MouseButton::Left, MouseButtonState::Up));
-    assert!(!should_toggle_panel(MouseButton::Right, MouseButtonState::Up));
+    assert!(should_toggle_panel(MouseButton::Right, MouseButtonState::Up));
     assert!(!should_toggle_panel(MouseButton::Right, MouseButtonState::Down));
 }
 
 #[test]
+fn test_clamp_panel_height() {
+    use last_token_lib::tray::{
+        clamp_panel_height, TRAY_PANEL_MAX_HEIGHT, TRAY_PANEL_MIN_HEIGHT,
+    };
+
+    assert_eq!(clamp_panel_height(50.0), TRAY_PANEL_MIN_HEIGHT);
+    assert_eq!(clamp_panel_height(900.0), TRAY_PANEL_MAX_HEIGHT);
+    assert_eq!(clamp_panel_height(240.0), 240.0);
+    assert_eq!(clamp_panel_height(f64::NAN), TRAY_PANEL_MIN_HEIGHT);
+}
+
+#[test]
 fn test_tray_panel_position_top_menu_bar() {
-    use last_token_lib::tray::compute_panel_position;
+    use last_token_lib::tray::{
+        compute_panel_position, TRAY_PANEL_MAX_HEIGHT, TRAY_PANEL_WIDTH,
+    };
 
     // 1000x800 work area, icon at top center (e.g. macOS menu bar)
     let (x, y) = compute_panel_position(
         (450.0, 10.0, 44.0, 22.0),   // icon rect
-        (380.0, 520.0),               // panel size
+        (TRAY_PANEL_WIDTH, TRAY_PANEL_MAX_HEIGHT), // panel size
         (0.0, 25.0, 1000.0, 775.0),  // work area (y=25 for menu bar)
     );
     assert!(y >= 10.0 + 22.0); // below the icon
-    assert!(x >= 0.0 && x + 380.0 <= 1000.0);
-    assert!(y + 520.0 <= 25.0 + 775.0);
+    assert!(x >= 0.0 && x + TRAY_PANEL_WIDTH <= 1000.0);
+    assert!(y + TRAY_PANEL_MAX_HEIGHT <= 25.0 + 775.0);
 }
 
 #[test]
 fn test_tray_panel_position_bottom_taskbar() {
-    use last_token_lib::tray::compute_panel_position;
+    use last_token_lib::tray::{
+        compute_panel_position, TRAY_PANEL_MAX_HEIGHT, TRAY_PANEL_WIDTH,
+    };
 
     // icon at bottom taskbar
     let (x, y) = compute_panel_position(
         (900.0, 740.0, 44.0, 22.0),
-        (380.0, 520.0),
+        (TRAY_PANEL_WIDTH, TRAY_PANEL_MAX_HEIGHT),
         (0.0, 0.0, 1000.0, 800.0),
     );
-    assert!(y + 520.0 <= 740.0); // above the icon
-    assert!(x + 380.0 <= 1000.0); // clamped to right edge
+    assert!(y + TRAY_PANEL_MAX_HEIGHT <= 740.0); // above the icon
+    assert!(x + TRAY_PANEL_WIDTH <= 1000.0); // clamped to right edge
     assert!(x >= 0.0);
 }
 
 #[test]
 fn test_tray_panel_position_negative_monitor_coords() {
-    use last_token_lib::tray::compute_panel_position;
+    use last_token_lib::tray::{
+        compute_panel_position, TRAY_PANEL_MAX_HEIGHT, TRAY_PANEL_WIDTH,
+    };
 
     let (x, y) = compute_panel_position(
         (-460.0, 10.0, 44.0, 22.0), // icon on left external monitor
-        (380.0, 520.0),
+        (TRAY_PANEL_WIDTH, TRAY_PANEL_MAX_HEIGHT),
         (-500.0, 0.0, 500.0, 800.0),
     );
-    assert!(x >= -500.0 && x + 380.0 <= 0.0);
-    assert!(y >= 0.0 && y + 520.0 <= 800.0);
+    assert!(x >= -500.0 && x + TRAY_PANEL_WIDTH <= 0.0);
+    assert!(y >= 0.0 && y + TRAY_PANEL_MAX_HEIGHT <= 800.0);
 }
 
 #[test]
 fn test_tray_panel_position_right_edge_clamp() {
-    use last_token_lib::tray::compute_panel_position;
+    use last_token_lib::tray::{
+        compute_panel_position, TRAY_PANEL_MAX_HEIGHT, TRAY_PANEL_WIDTH,
+    };
 
     let (x, _y) = compute_panel_position(
         (1200.0, 10.0, 44.0, 22.0), // near right edge
-        (380.0, 520.0),
+        (TRAY_PANEL_WIDTH, TRAY_PANEL_MAX_HEIGHT),
         (0.0, 0.0, 1280.0, 800.0),
     );
-    assert!(x + 380.0 <= 1280.0);
+    assert!(x + TRAY_PANEL_WIDTH <= 1280.0);
     assert!(x >= 0.0);
 }
 
