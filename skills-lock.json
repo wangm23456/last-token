@@ -1,29 +1,29 @@
 {
   "version": 1,
   "skills": {
-    "adding-tauri-system-tray": {
-      "source": "dchuk/claude-code-tauri-skills",
+    "gpui-kit": {
+      "source": "longbridge/gpui-kit",
       "sourceType": "github",
-      "skillPath": "tauri/tauri-system-tray/SKILL.md",
-      "computedHash": "597e0fa835fa2b90f28cd6628fc17f65a8fdf6e505b17d4549429512c58245b0"
+      "skillPath": "skills/gpui-kit/SKILL.md",
+      "computedHash": "e401812a1269fd2caa07d307867f25c38c974f706f34bd52a8da8465b85ddd75"
     },
-    "debugging-tauri-apps": {
-      "source": "dchuk/claude-code-tauri-skills",
+    "gpui-kit-design-guides": {
+      "source": "longbridge/gpui-kit",
       "sourceType": "github",
-      "skillPath": "tauri/tauri-debugging/SKILL.md",
-      "computedHash": "fbc8c3ecac07c458f3fe3177668dd52489218b64e0b6af5b016dc057d6295ff3"
+      "skillPath": "skills/gpui-kit-design-guides/SKILL.md",
+      "computedHash": "cc144ee0cc35978c387e6a13e8bc2cd25bfac45363ad25235d5b9cf09f8fa017"
     },
-    "tauri-v2": {
-      "source": "nodnarbnitram/claude-code-extensions",
+    "rust-async-patterns": {
+      "source": "wshobson/agents",
       "sourceType": "github",
-      "skillPath": ".claude/skills/tauri-v2/SKILL.md",
-      "computedHash": "377c61c46cf48c35b942042bc8abb9a039049a47f37d7f12b4f491d012777490"
+      "skillPath": "plugins/systems-programming/skills/rust-async-patterns/SKILL.md",
+      "computedHash": "20d32ef58158c94eb4dfc4aaf19bec7ae2a025ae5d42da7b49ccfbaeda389273"
     },
-    "testing-tauri-apps": {
-      "source": "dchuk/claude-code-tauri-skills",
+    "rust-best-practices": {
+      "source": "apollographql/skills",
       "sourceType": "github",
-      "skillPath": "tauri/tauri-testing/SKILL.md",
-      "computedHash": "12084f72d1e7c13dc0c11e882df9a65b252cdb8184fb1e93bc06a4516a4c3a35"
+      "skillPath": "skills/rust-best-practices/SKILL.md",
+      "computedHash": "a3db351ec552ed9d36b59e547d6c1d94077867eb5bcb98b3f802dfebb0a8a248"
     }
   }
 }
