@@ -6,4 +6,3 @@ pub mod tier_view;
 pub mod tray;
 pub mod management;
 pub mod watch;
-pub mod tray_panel;

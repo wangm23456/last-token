@@ -11,8 +11,6 @@ use last_token_lib::domain::{
 };
 use last_token_lib::ui::shell::{AppShell, Surface};
 use last_token_lib::ui::store::{AppStore, Busy};
-use last_token_lib::ui::tray::StoreGlobal;
-use last_token_lib::ui::tray_panel::TrayPanelView;
 
 fn tier(
     now: i64,
@@ -184,10 +182,7 @@ fn shell_page(cx: &mut TestAppContext, page: Surface, w: f32, h: f32) -> gpui_ki
                 ..Default::default()
             },
             cx,
-            |window, cx| {
-                cx.set_global(StoreGlobal(store.clone()));
-                cx.new(|cx| AppShell::new(window, cx, store.clone()))
-            },
+            |window, cx| cx.new(|cx| AppShell::new(window, cx, store.clone())),
         )
         .expect("open shell")
     });
@@ -224,7 +219,6 @@ fn open_watch(cx: &mut TestAppContext, with_data: bool) -> gpui_kit::AnyWindowHa
         }
     });
     let (handle, _) = cx.update(|cx| {
-        cx.set_global(StoreGlobal(store.clone()));
         gpui_kit::open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -381,25 +375,3 @@ fn surface_labels_localized() {
     }
 }
 
-#[gpui_kit::test]
-fn tray_panel_renders(cx: &mut TestAppContext) {
-    cx.update(gpui_kit::init);
-    let store = cx.update(build_store);
-    let (handle, _) = cx.update(|cx| {
-        cx.set_global(StoreGlobal(store.clone()));
-        gpui_kit::open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                    Default::default(),
-                    size(px(254.), px(520.)),
-                ))),
-                ..Default::default()
-            },
-            cx,
-            |_, cx| cx.new(|cx| TrayPanelView::new(store.clone(), cx)),
-        )
-        .expect("open tray panel")
-    });
-    let _ = cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
-        .expect("render frame");
-}

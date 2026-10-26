@@ -17,8 +17,6 @@ use crate::domain::{
 };
 use crate::ui::shell::{AppShell, Surface};
 use crate::ui::store::{AppStore, Busy};
-use crate::ui::tray::StoreGlobal;
-use crate::ui::tray_panel::TrayPanelView;
 
 fn tier(
     now: i64,
@@ -198,7 +196,6 @@ pub fn run() {
             );
 
             let store = build_store(cx);
-            cx.set_global(StoreGlobal(store.clone()));
 
             let opts = |w: f32, h: f32| WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -235,16 +232,10 @@ pub fn run() {
             })
             .expect("settings window");
 
-            let (tray, _) = gpui_kit::open_window(opts(254., 520.), cx, |_, cx| {
-                cx.new(|cx| TrayPanelView::new(store.clone(), cx))
-            })
-            .expect("tray window");
-
             let captures = [
                 (overview, "overview"),
                 (providers, "providers"),
                 (settings, "settings"),
-                (tray, "tray"),
             ];
 
             cx.spawn(async move |cx| {

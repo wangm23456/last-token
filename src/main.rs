@@ -67,8 +67,6 @@ fn main() {
             )
             .expect("failed to open main window");
 
-            // Tray panel and late windows reach the store through a global.
-            cx.set_global(last_token_lib::ui::tray::StoreGlobal(store.clone()));
             last_token_lib::ui::tray::setup(cx);
 
             let _ = main;
