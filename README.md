@@ -58,7 +58,7 @@ Grab installers from the [Releases](https://github.com/wangm23456/last-token/rel
 
 ### Requirements
 
-- [Rust](https://www.rust-lang.org/) (>= 1.77)
+- [Rust](https://www.rust-lang.org/) (>= 1.80)
 
 ### Quick start
 

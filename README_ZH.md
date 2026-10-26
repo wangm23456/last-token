@@ -58,7 +58,7 @@
 
 ### 环境要求
 
-- [Rust](https://www.rust-lang.org/) (>= 1.77)
+- [Rust](https://www.rust-lang.org/) (>= 1.80)
 
 ### 快速开始
 

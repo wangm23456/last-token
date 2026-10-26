@@ -187,7 +187,7 @@ fn shell_page(cx: &mut TestAppContext, page: Surface, w: f32, h: f32) -> gpui_ki
         .expect("open shell")
     });
     shell.update(cx, |shell, _| shell.surface = page);
-    let _ = cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
         .expect("render frame");
     handle
 }
@@ -232,54 +232,54 @@ fn open_watch(cx: &mut TestAppContext, with_data: bool) -> gpui_kit::AnyWindowHa
         )
         .expect("open watch")
     });
-    let _ = cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
         .expect("render frame");
     handle
 }
 
 fn render(handle: gpui_kit::AnyWindowHandle, cx: &mut TestAppContext) {
-    let _ = cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
         .expect("render frame");
 }
 
 #[gpui_kit::test]
 fn watch_default_selects_worst_account(cx: &mut TestAppContext) {
     let handle = open_watch(cx, true);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         assert!(window.find("acct-row-a:2").visible());
         let name = window.find("watch-detail-name");
-        assert_eq!(name.label().as_deref(), Some("Kimi 长期号"));
+        assert_eq!(name.label(), Some("Kimi 长期号"));
     });
 }
 
 #[gpui_kit::test]
 fn watch_click_switches_detail(cx: &mut TestAppContext) {
     let handle = open_watch(cx, true);
-    let _ = cx.update_window(handle.into(), |_, window, cx| {
+    let _ = cx.update_window(handle, |_, window, cx| {
         window.click("acct-row-a:1", cx);
     });
     render(handle, cx);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         let name = window.find("watch-detail-name");
-        assert_eq!(name.label().as_deref(), Some("Claude 工作号"));
+        assert_eq!(name.label(), Some("Claude 工作号"));
     });
 }
 
 #[gpui_kit::test]
 fn watch_tier_sparkline_visible(cx: &mut TestAppContext) {
     let handle = open_watch(cx, true);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         // Default selection is the worst account (a:2); its monthly tier has
         // injected history, so the sparkline must render with real width.
         let chart = window.find("tier-chart-a:2-monthly");
         assert!(chart.visible(), "tier sparkline must render with history");
         assert!(chart.bounds().size.width > px(0.), "sparkline has width");
     });
-    let _ = cx.update_window(handle.into(), |_, window, cx| {
+    let _ = cx.update_window(handle, |_, window, cx| {
         window.click("acct-row-a:1", cx);
     });
     render(handle, cx);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         let unlimited = window.find("tier-pct-a:1-unlimited_seats");
         assert!(
             unlimited.label().is_some(),
@@ -292,11 +292,11 @@ fn watch_tier_sparkline_visible(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn watch_error_account_detail(cx: &mut TestAppContext) {
     let handle = open_watch(cx, true);
-    let _ = cx.update_window(handle.into(), |_, window, cx| {
+    let _ = cx.update_window(handle, |_, window, cx| {
         window.click("acct-row-a:3", cx);
     });
     render(handle, cx);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         let err = window.find("watch-detail-error");
         assert!(
             err.visible(),
@@ -310,7 +310,7 @@ fn watch_error_account_detail(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn watch_empty_state(cx: &mut TestAppContext) {
     let handle = open_watch(cx, false);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         assert!(window.find("watch-empty").visible());
     });
 }
@@ -319,7 +319,7 @@ fn watch_empty_state(cx: &mut TestAppContext) {
 fn management_defaults_to_accounts_section(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let handle = shell_page(cx, Surface::Management, 760., 900.);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         assert!(window.find("mgmt-section-accounts").visible());
         assert!(window.try_find("mgmt-section-alerts").is_none());
     });
@@ -329,13 +329,13 @@ fn management_defaults_to_accounts_section(cx: &mut TestAppContext) {
 fn management_alerts_rules_editable_and_unlimited_locked(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let handle = shell_page(cx, Surface::Management, 760., 900.);
-    let _ = cx.update_window(handle.into(), |_, window, cx| {
+    let _ = cx.update_window(handle, |_, window, cx| {
         window.click("mgmt-nav-alerts", cx);
     });
     render(handle, cx);
     // Unlimited-tier rule row renders and its toggle is locked: clicking it
     // must not flip the draft.
-    let _ = cx.update_window(handle.into(), |_, window, cx| {
+    let _ = cx.update_window(handle, |_, window, cx| {
         assert!(window.find("mgmt-section-alerts").visible());
         assert!(window.try_find("mgmt-section-accounts").is_none());
         assert!(window.find("alert-rule-a:1-unlimited_seats").visible());
@@ -343,7 +343,7 @@ fn management_alerts_rules_editable_and_unlimited_locked(cx: &mut TestAppContext
     });
     render(handle, cx);
     // The normal rule's toggle is enabled: clicking flips its draft.
-    let _ = cx.update_window(handle.into(), |_, window, cx| {
+    let _ = cx.update_window(handle, |_, window, cx| {
         window.click("alert-toggle-a:1-five_hour", cx);
     });
     render(handle, cx);
@@ -353,11 +353,11 @@ fn management_alerts_rules_editable_and_unlimited_locked(cx: &mut TestAppContext
 fn management_subnav_switches_sections(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let handle = shell_page(cx, Surface::Management, 760., 900.);
-    let _ = cx.update_window(handle.into(), |_, window, cx| {
+    let _ = cx.update_window(handle, |_, window, cx| {
         window.click("mgmt-nav-settings", cx);
     });
     render(handle, cx);
-    let _ = cx.update_window(handle.into(), |_, window, _| {
+    let _ = cx.update_window(handle, |_, window, _| {
         assert!(window.find("mgmt-section-settings").visible());
         assert!(window.try_find("mgmt-section-accounts").is_none());
     });
