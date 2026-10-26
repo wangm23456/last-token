@@ -307,5 +307,12 @@
   "refresh": {
     "success": "Refreshed successfully",
     "failed": "Refresh failed: {{message}}"
+  },
+  "management": {
+    "nav": {
+      "accounts": "Accounts",
+      "alerts": "Alerts",
+      "settings": "Settings"
+    }
   }
 }

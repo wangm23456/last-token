@@ -7,7 +7,7 @@ use gpui_kit::component::{h_flex, v_flex, WindowExt};
 use gpui_kit::*;
 
 use crate::domain::PublicAccount;
-use crate::ui::providers_tab::AccountForm;
+use crate::ui::management::{AccountAlertDrafts, AccountForm, ManagementSection};
 use crate::ui::store::AppStore;
 
 /// Top-level surface of the two-sided IA (KTD1): the watch surface is the
@@ -30,6 +30,9 @@ pub struct AppShell {
     pub form: Option<AccountForm>,
     pub deleting: Option<PublicAccount>,
     pub clear_confirm: bool,
+    /// Management surface sub-nav state and alert-rule drafts.
+    pub mgmt_section: ManagementSection,
+    pub alert_drafts: Vec<AccountAlertDrafts>,
     _store_observer: Subscription,
 }
 
@@ -68,6 +71,8 @@ impl AppShell {
             form: None,
             deleting: None,
             clear_confirm: false,
+            mgmt_section: ManagementSection::Accounts,
+            alert_drafts: Vec::new(),
             _store_observer,
         }
     }
@@ -128,16 +133,7 @@ impl Render for AppShell {
         // as one column.
         let content = match self.surface {
             Surface::Watch => self.render_watch(window, cx),
-            Surface::Management => v_flex()
-                .id("mgmt-scroll")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .gap_6()
-                .pr_1()
-                .child(self.render_providers(window, cx))
-                .child(self.render_settings(window, cx))
-                .into_any_element(),
+            Surface::Management => self.render_management(window, cx),
         };
 
         v_flex()

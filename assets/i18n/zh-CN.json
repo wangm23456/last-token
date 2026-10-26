@@ -307,5 +307,12 @@
   "refresh": {
     "success": "刷新成功",
     "failed": "刷新失败: {{message}}"
+  },
+  "management": {
+    "nav": {
+      "accounts": "账户",
+      "alerts": "告警",
+      "settings": "设置"
+    }
   }
 }

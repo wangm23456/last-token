@@ -1,5 +1,12 @@
-//! Providers tab: one-click import, CLI discovery, manual accounts, and the
-//! add/edit account dialog form.
+//! Management surface (R5–R8): one surface with a three-section sub-nav —
+//! accounts (existing management capabilities, behavior unchanged), alerts
+//! (per-account threshold rules, promoted out of the edit dialog), settings.
+
+
+
+
+
+
 
 use std::collections::HashMap;
 
@@ -9,8 +16,7 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::theme::ActiveTheme;
-use gpui_kit::component::WindowExt;
-use gpui_kit::component::{h_flex, v_flex, Disableable, Sizable};
+use gpui_kit::component::{h_flex, v_flex, Disableable, Sizable, WindowExt};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -18,8 +24,358 @@ use crate::domain::{
     AccountInput, AlertRule, CredentialStatus, ProviderConfig, ProviderKind, PublicAccount,
     SecretPayload,
 };
+use crate::i18n::SUPPORTED_LANGUAGES;
 use crate::ui::shell::AppShell;
 use crate::ui::store::{Busy, DeviceFlowStatus};
+
+/// Sections of the management surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagementSection {
+    Accounts,
+    Alerts,
+    Settings,
+}
+
+impl AppShell {
+    pub fn render_management(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = cx.theme().clone();
+        let lang = self.lang(cx);
+        let selected = self.mgmt_section;
+        let nav = h_flex()
+            .id("mgmt-nav")
+            .gap_1()
+            .p_1()
+            .rounded_md()
+            .border_1()
+            .border_color(theme.colors.border.opacity(0.8))
+            .child(self.mgmt_nav_segment("accounts", 0, &lang, &theme, cx))
+            .child(self.mgmt_nav_segment("alerts", 1, &lang, &theme, cx))
+            .child(self.mgmt_nav_segment("settings", 2, &lang, &theme, cx));
+
+        let body = match selected {
+            ManagementSection::Accounts => v_flex()
+                .id("mgmt-section-accounts")
+                .test_support()
+                .child(self.render_providers(window, cx))
+                .into_any_element(),
+            ManagementSection::Alerts => self.render_alerts_section(&theme, &lang, cx),
+            ManagementSection::Settings => v_flex()
+                .id("mgmt-section-settings")
+                .test_support()
+                .child(self.render_settings(window, cx))
+                .into_any_element(),
+        };
+
+        v_flex()
+            .size_full()
+            .gap_3()
+            .child(nav)
+            .child(
+                v_flex()
+                    .id("mgmt-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .pr_1()
+                    .child(body),
+            )
+            .into_any_element()
+    }
+
+    fn mgmt_nav_segment(
+        &mut self,
+        key: &'static str,
+        ix: usize,
+        lang: &str,
+        theme: &gpui_kit::component::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let label_key = match key {
+            "accounts" => "management.nav.accounts",
+            "alerts" => "management.nav.alerts",
+            _ => "management.nav.settings",
+        };
+        let section = match key {
+            "accounts" => ManagementSection::Accounts,
+            "alerts" => ManagementSection::Alerts,
+            _ => ManagementSection::Settings,
+        };
+        let selected = self.mgmt_section == section;
+        let segment = div()
+            .id(format!("mgmt-nav-{key}"))
+            .test_support()
+            .px_3()
+            .py_1()
+            .rounded_sm()
+            .cursor_pointer()
+            .text_sm()
+            .font_weight(if selected {
+                FontWeight::SEMIBOLD
+            } else {
+                FontWeight::NORMAL
+            })
+            .text_color(if selected {
+                theme.colors.foreground
+            } else {
+                theme.colors.muted_foreground
+            });
+        let segment = if selected {
+            segment.bg(theme.colors.button_secondary)
+        } else {
+            segment
+        };
+        segment
+            .on_click(cx.listener(move |this, _, window, cx| {
+                if section == ManagementSection::Alerts && this.mgmt_section != section {
+                    this.enter_alerts(window, cx);
+                }
+                this.mgmt_section = section;
+                let _ = ix;
+                cx.notify();
+            }))
+            .child(crate::i18n::tr(lang, label_key))
+            .into_any_element()
+    }
+
+    /// Build editable alert-rule drafts for every stored account. Runs from
+    /// the nav click (event context), never from render.
+    pub fn enter_alerts(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let (accounts, tiers_unlimited) = {
+            let store = self.store.read(cx);
+            let mut unlimited = HashMap::new();
+            if let Some(snap) = store.snapshot.as_ref() {
+                for acc in &snap.accounts {
+                    for t in &acc.tiers {
+                        unlimited
+                            .entry((acc.account.id.clone(), t.quota.id.clone()))
+                            .or_insert(t.quota.unlimited);
+                    }
+                }
+            }
+            (store.accounts.clone(), unlimited)
+        };
+        let drafts = accounts
+            .into_iter()
+            .map(|acc| {
+                let mut meta = HashMap::new();
+                let rules: Vec<(AlertRule, Entity<InputState>)> = acc
+                    .alert_rules
+                    .iter()
+                    .map(|r| {
+                        let unlimited =
+                            tunlimited_get(&tiers_unlimited, &acc.id, &r.tier_id);
+                        meta.insert(
+                            r.tier_id.clone(),
+                            AlertMeta {
+                                label: r.tier_id.clone(),
+                                unlimited,
+                                missing: false,
+                            },
+                        );
+                        let input = cx.new(|cx| {
+                            let s = InputState::new(_window, cx)
+                                .placeholder("80");
+                            s
+                        });
+                        input.update(cx, |state, cx| {
+                            state.set_value(r.threshold_percent.to_string(), _window, cx);
+                        });
+                        (r.clone(), input)
+                    })
+                    .collect();
+                AccountAlertDrafts { account: acc, rules, meta }
+            })
+            .collect();
+        self.alert_drafts = drafts;
+    }
+
+    fn render_alerts_section(
+        &mut self,
+        theme: &gpui_kit::component::theme::Theme,
+        lang: &str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if self.alert_drafts.is_empty() {
+            return v_flex()
+                .id("mgmt-section-alerts")
+                .test_support()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.colors.muted_foreground)
+                        .child(crate::i18n::tr(lang, "providers.alert.afterFirstRefresh")),
+                )
+                .into_any_element();
+        }
+        let mut col = v_flex()
+            .id("mgmt-section-alerts")
+            .test_support()
+            .gap_3();
+        for group in &self.alert_drafts {
+            let mut card = v_flex()
+                .gap_2()
+                .p_3()
+                .rounded_lg()
+                .border_1()
+                .border_color(theme.colors.border.opacity(0.6))
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(group.account.display_name.clone()),
+                );
+            for (rule, input) in &group.rules {
+                let meta = group.meta.get(&rule.tier_id);
+                let unlimited = meta.map(|m| m.unlimited).unwrap_or(false);
+                let row_id = format!("alert-rule-{}-{}", group.account.id, rule.tier_id);
+                let toggle_id = format!("alert-toggle-{}-{}", group.account.id, rule.tier_id);
+                let acct_id = group.account.id.clone();
+                let tier_id = rule.tier_id.clone();
+                card = card.child(
+                    v_flex()
+                        .gap_2()
+                        .p_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(theme.colors.border.opacity(0.4))
+                        .child(
+                            h_flex()
+                                .id(row_id)
+                                .test_support()
+                                .w_full()
+                                .justify_between()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .flex_1()
+                                        .text_sm()
+                                        .truncate()
+                                        .child(rule.tier_id.clone()),
+                                )
+                                .child(
+                                    h_flex()
+                                        .id(toggle_id)
+                                        .test_support()
+                                        .child(
+                                            Switch::new(format!(
+                                                "alert-toggle-switch-{acct_id}-{tier_id}"
+                                            ))
+                                            .checked(rule.enabled && !unlimited)
+                                            .disabled(unlimited)
+                                            .on_change(cx.listener(move |this, enabled, _, cx| {
+                                                if let Some(g) = this
+                                                    .alert_drafts
+                                                    .iter_mut()
+                                                    .find(|g| g.account.id == acct_id)
+                                                {
+                                                    if let Some((r, _)) = g
+                                                        .rules
+                                                        .iter_mut()
+                                                        .find(|(r, _)| r.tier_id == tier_id)
+                                                    {
+                                                        let locked = g
+                                                            .meta
+                                                            .get(&r.tier_id)
+                                                            .map(|m| m.unlimited)
+                                                            .unwrap_or(false);
+                                                        if !locked {
+                                                            r.enabled = *enabled;
+                                                        }
+                                                    }
+                                                }
+                                                cx.notify();
+                                            })),
+                                        ),
+                                ),
+                        )
+                        .when(!unlimited, |col| {
+                            col.child(
+                                Field::new()
+                                    .label(crate::i18n::tr(
+                                        lang,
+                                        "providers.alert.thresholdLabel",
+                                    ))
+                                    .child(Input::new(input)),
+                            )
+                        }),
+                );
+            }
+
+            let save_id = format!("alert-save-{}", group.account.id);
+            let save_acct = group.account.id.clone();
+            card = card.child(
+                Button::new(save_id)
+                    .outline()
+                    .small()
+                    .label(crate::i18n::tr(lang, "providers.form.confirm"))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if let Some(g) = this
+                            .alert_drafts
+                            .iter()
+                            .find(|g| g.account.id == save_acct)
+                        {
+                            let mut rules: Vec<AlertRule> = Vec::new();
+                            for (r, input) in &g.rules {
+                                let raw = input.read(cx).value().to_string();
+                                let threshold: u8 = raw.trim().parse().unwrap_or(r.threshold_percent);
+                                let locked = g
+                                    .meta
+                                    .get(&r.tier_id)
+                                    .map(|m| m.unlimited)
+                                    .unwrap_or(false);
+                                let threshold = if (1..=99).contains(&threshold) {
+                                    threshold
+                                } else {
+                                    r.threshold_percent
+                                };
+                                rules.push(AlertRule {
+                                    tier_id: r.tier_id.clone(),
+                                    enabled: r.enabled && !locked,
+                                    threshold_percent: threshold,
+                                });
+                            }
+                            let input = AccountInput {
+                                id: Some(g.account.id.clone()),
+                                display_name: g.account.display_name.clone(),
+                                enabled: g.account.enabled,
+                                config: g.account.config.clone(),
+                                secret: None,
+                                remove_credential: None,
+                                alert_rules: rules,
+                            };
+                            this.store.update(cx, |store, cx| store.save_account(input, cx));
+                        }
+                    })),
+            );
+            col = col.child(card);
+        }
+        col.into_any_element()
+    }
+}
+
+/// Per-account alert-rule drafts for the management alerts section.
+pub struct AccountAlertDrafts {
+    pub account: PublicAccount,
+    pub rules: Vec<(AlertRule, Entity<InputState>)>,
+    pub meta: HashMap<String, AlertMeta>,
+}
+
+fn tunlimited_get(
+    map: &HashMap<(String, String), bool>,
+    acct: &str,
+    tier: &str,
+) -> bool {
+    map.get(&(acct.to_string(), tier.to_string())).copied().unwrap_or(false)
+}
+
+
+
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormMode {
@@ -1194,3 +1550,244 @@ impl AppShell {
         cx.notify();
     }
 }
+
+
+
+const REFRESH_OPTIONS: [i64; 4] = [5, 10, 15, 30];
+
+impl AppShell {
+    pub fn render_settings(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme().clone();
+        let lang = self.lang(cx);
+        let (settings, language) = {
+            let store = self.store.read(cx);
+            (store.settings.clone(), store.language.clone())
+        };
+
+        let section = |title: String, desc: Option<String>, body: AnyElement| {
+            v_flex()
+                .gap_3()
+                .p_4()
+                .rounded_lg()
+                .border_1()
+                .border_color(theme.colors.border.opacity(0.6))
+                .bg(theme.colors.background.opacity(0.3))
+                .child(
+                    v_flex()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(theme.colors.muted_foreground)
+                                .child(title),
+                        )
+                        .when_some(desc, |col, desc| {
+                            col.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.colors.muted_foreground)
+                                    .child(desc),
+                            )
+                        }),
+                )
+                .child(body)
+        };
+
+        let lang_ix = SUPPORTED_LANGUAGES
+            .iter()
+            .position(|l| *l == language)
+            .unwrap_or(0);
+        let language_field = v_flex()
+            .gap_2()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(crate::i18n::tr(&lang, "settings.language.label")),
+            )
+            .child(
+                RadioGroup::new("language")
+                    .children(
+                        SUPPORTED_LANGUAGES
+                            .iter()
+                            .map(|l| {
+                                Radio::new(format!("lang-{}", *l)).label(crate::i18n::tr(
+                                    &lang,
+                                    &format!("settings.language.options.{l}"),
+                                ))
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .selected_index(Some(lang_ix))
+                    .on_change(cx.listener(|this, ix, _, cx| {
+                        let l = SUPPORTED_LANGUAGES[*ix];
+                        this.store.update(cx, |store, cx| store.set_language(l, cx));
+                    })),
+            );
+
+        let interval_ix = REFRESH_OPTIONS
+            .iter()
+            .position(|m| *m == settings.refresh_interval_minutes)
+            .unwrap_or(0);
+        let interval_field = v_flex()
+            .gap_2()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(crate::i18n::tr(&lang, "settings.behavior.refreshLabel")),
+            )
+            .child(
+                RadioGroup::new("interval")
+                    .children(
+                        REFRESH_OPTIONS
+                            .iter()
+                            .map(|m| {
+                                Radio::new(format!("interval-{}", *m)).label(crate::i18n::tr(
+                                    &lang,
+                                    &format!("settings.behavior.options.{m}"),
+                                ))
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .selected_index(Some(interval_ix))
+                    .on_change(cx.listener(|this, ix, _, cx| {
+                        let mut s = this.store.read(cx).settings.clone();
+                        s.refresh_interval_minutes = REFRESH_OPTIONS[*ix];
+                        this.store
+                            .update(cx, |store, cx| store.update_settings(s, cx));
+                    })),
+            );
+
+        let data_body = v_flex()
+            .gap_3()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.colors.muted_foreground)
+                    .child(crate::i18n::tr(&lang, "settings.data.autoCleanupDesc")),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(crate::i18n::tr(&lang, "settings.data.clearHistory")),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.colors.muted_foreground)
+                                    .child(crate::i18n::tr(
+                                        &lang,
+                                        "settings.data.clearHistoryDesc",
+                                    )),
+                            ),
+                    )
+                    .child(
+                        Button::new("clear-history")
+                            .danger()
+                            .outline()
+                            .label(crate::i18n::tr(&lang, "settings.data.clearButton"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let lang = this.lang(cx);
+                                let store = this.store.clone();
+                                window.open_alert_dialog(cx, move |alert, _window, _cx| {
+                                    let store = store.clone();
+                                    alert
+                                        .title(crate::i18n::tr(&lang, "settings.data.dialogTitle"))
+                                        .description(crate::i18n::tr(
+                                            &lang,
+                                            "settings.data.dialogDesc",
+                                        ))
+                                        .show_cancel(true)
+                                        .ok_text(crate::i18n::tr(&lang, "settings.data.confirm"))
+                                        .on_ok(move |_, _, cx| {
+                                            store.update(cx, |store, cx| store.clear_history(cx));
+                                            true
+                                        })
+                                        .on_cancel(|_, _, _| true)
+                                });
+                            })),
+                    ),
+            );
+
+        let security_body = v_flex()
+            .gap_3()
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(crate::i18n::tr(&lang, "settings.security.envRead")),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.colors.muted_foreground)
+                            .child(crate::i18n::tr(&lang, "settings.security.envReadDesc")),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(crate::i18n::tr(&lang, "settings.security.noRelay")),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.colors.muted_foreground)
+                            .child(crate::i18n::tr(&lang, "settings.security.noRelayDesc")),
+                    ),
+            );
+
+        v_flex()
+            .gap_4()
+            .child(section(
+                crate::i18n::tr(&lang, "settings.behavior.title"),
+                Some(crate::i18n::tr(&lang, "settings.behavior.desc")),
+                v_flex()
+                    .gap_4()
+                    .child(language_field)
+                    .child(interval_field)
+                    .into_any_element(),
+            ))
+            .child(section(
+                crate::i18n::tr(&lang, "settings.data.title"),
+                Some(crate::i18n::tr(&lang, "settings.data.desc")),
+                data_body.into_any_element(),
+            ))
+            .child(section(
+                crate::i18n::tr(&lang, "settings.security.title"),
+                None,
+                security_body.into_any_element(),
+            ))
+            .child(
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(theme.colors.muted_foreground)
+                    .child(crate::i18n::tr_params(
+                        &lang,
+                        "settings.version",
+                        &[("version", env!("CARGO_PKG_VERSION"))],
+                    )),
+            )
+            .into_any_element()
+    }
+}
+

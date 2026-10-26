@@ -59,7 +59,11 @@ fn account(
             credential_source: CredentialSource::Env,
             has_credential: true,
             config: ProviderConfig::Kimi,
-            alert_rules: vec![],
+            alert_rules: vec![last_token_lib::domain::AlertRule {
+                tier_id: "five_hour".into(),
+                enabled: true,
+                threshold_percent: 80,
+            }],
         },
         credential_status: CredentialStatus::Valid,
         stale: false,
@@ -85,7 +89,7 @@ fn mock_snapshot() -> DashboardSnapshot {
             240,
         )],
     );
-    let safe = account(
+    let mut safe = account(
         "a:1",
         "Claude 工作号",
         ProviderKind::Claude,
@@ -98,6 +102,11 @@ fn mock_snapshot() -> DashboardSnapshot {
     let mut broken = account("a:3", "Copilot 团队", ProviderKind::Copilot, vec![]);
     broken.credential_status = CredentialStatus::Unavailable;
     broken.error = Some("token has expired or is invalid".into());
+    safe.account.alert_rules.push(last_token_lib::domain::AlertRule {
+        tier_id: "unlimited_seats".into(),
+        enabled: false,
+        threshold_percent: 90,
+    });
     let mut snapshot = DashboardSnapshot {
         accounts: vec![risk, safe, broken],
         leading_risk: RiskState::AtRisk,
@@ -163,7 +172,7 @@ fn build_store(cx: &mut gpui_kit::App) -> Entity<AppStore> {
     cx.new(|_| store)
 }
 
-fn shell_page(cx: &mut TestAppContext, page: Surface, w: f32, h: f32) {
+fn shell_page(cx: &mut TestAppContext, page: Surface, w: f32, h: f32) -> gpui_kit::AnyWindowHandle {
     let store = cx.update(build_store);
     let (handle, shell) = cx.update(|cx| {
         gpui_kit::open_window(
@@ -185,6 +194,7 @@ fn shell_page(cx: &mut TestAppContext, page: Surface, w: f32, h: f32) {
     shell.update(cx, |shell, _| shell.surface = page);
     let _ = cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
         .expect("render frame");
+    handle
 }
 
 #[gpui_kit::test]
@@ -308,6 +318,54 @@ fn watch_empty_state(cx: &mut TestAppContext) {
     let handle = open_watch(cx, false);
     let _ = cx.update_window(handle.into(), |_, window, _| {
         assert!(window.find("watch-empty").visible());
+    });
+}
+
+#[gpui_kit::test]
+fn management_defaults_to_accounts_section(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let handle = shell_page(cx, Surface::Management, 760., 900.);
+    let _ = cx.update_window(handle.into(), |_, window, _| {
+        assert!(window.find("mgmt-section-accounts").visible());
+        assert!(window.try_find("mgmt-section-alerts").is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn management_alerts_rules_editable_and_unlimited_locked(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let handle = shell_page(cx, Surface::Management, 760., 900.);
+    let _ = cx.update_window(handle.into(), |_, window, cx| {
+        window.click("mgmt-nav-alerts", cx);
+    });
+    render(handle, cx);
+    // Unlimited-tier rule row renders and its toggle is locked: clicking it
+    // must not flip the draft.
+    let _ = cx.update_window(handle.into(), |_, window, cx| {
+        assert!(window.find("mgmt-section-alerts").visible());
+        assert!(window.try_find("mgmt-section-accounts").is_none());
+        assert!(window.find("alert-rule-a:1-unlimited_seats").visible());
+        window.click("alert-toggle-a:1-unlimited_seats", cx);
+    });
+    render(handle, cx);
+    // The normal rule's toggle is enabled: clicking flips its draft.
+    let _ = cx.update_window(handle.into(), |_, window, cx| {
+        window.click("alert-toggle-a:1-five_hour", cx);
+    });
+    render(handle, cx);
+}
+
+#[gpui_kit::test]
+fn management_subnav_switches_sections(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let handle = shell_page(cx, Surface::Management, 760., 900.);
+    let _ = cx.update_window(handle.into(), |_, window, cx| {
+        window.click("mgmt-nav-settings", cx);
+    });
+    render(handle, cx);
+    let _ = cx.update_window(handle.into(), |_, window, _| {
+        assert!(window.find("mgmt-section-settings").visible());
+        assert!(window.try_find("mgmt-section-accounts").is_none());
     });
 }
 
