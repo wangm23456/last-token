@@ -7,7 +7,9 @@
   "tabs": {
     "overview": "概览",
     "providers": "提供商",
-    "settings": "设置"
+    "settings": "设置",
+    "watch": "盯盘",
+    "management": "管理"
   },
   "error": {
     "boundaryTitle": "应用渲染异常 (React Error)",

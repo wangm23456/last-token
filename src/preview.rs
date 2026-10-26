@@ -15,7 +15,7 @@ use crate::domain::{
     AccountDashboard, CredentialSource, CredentialStatus, DashboardSnapshot, ProviderConfig,
     ProviderKind, PublicAccount, QuotaTier, RiskState, Settings, TierDashboard, TierForecast,
 };
-use crate::ui::shell::{AppShell, TabPage};
+use crate::ui::shell::{AppShell, Surface};
 use crate::ui::store::{AppStore, Busy};
 use crate::ui::tray::StoreGlobal;
 use crate::ui::tray_panel::TrayPanelView;
@@ -145,12 +145,12 @@ fn build_store(cx: &mut gpui_kit::App) -> Entity<AppStore> {
 /// Wrapper that swaps the shell page before the first capture.
 struct PageFix {
     inner: Entity<AppShell>,
-    page: TabPage,
+    surface: Surface,
 }
 
 impl Render for PageFix {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.inner.update(cx, |shell, _| shell.page = self.page);
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.inner.update(cx, |shell, _| shell.surface = self.surface);
         self.inner.clone()
     }
 }
@@ -180,27 +180,27 @@ pub fn run() {
 
             let (overview, _) = gpui_kit::open_window(opts(760., 720.), cx, |window, cx| {
                 let shell = cx.new(|cx| AppShell::new(window, cx, store.clone()));
-                cx.new(|cx| PageFix {
+                cx.new(|_cx| PageFix {
                     inner: shell,
-                    page: TabPage::Overview,
+                    surface: Surface::Watch,
                 })
             })
             .expect("overview window");
 
             let (providers, _) = gpui_kit::open_window(opts(760., 720.), cx, |window, cx| {
                 let shell = cx.new(|cx| AppShell::new(window, cx, store.clone()));
-                cx.new(|cx| PageFix {
+                cx.new(|_cx| PageFix {
                     inner: shell,
-                    page: TabPage::Providers,
+                    surface: Surface::Management,
                 })
             })
             .expect("providers window");
 
-            let (settings, _) = gpui_kit::open_window(opts(760., 560.), cx, |window, cx| {
+            let (settings, _) = gpui_kit::open_window(opts(760., 900.), cx, |window, cx| {
                 let shell = cx.new(|cx| AppShell::new(window, cx, store.clone()));
-                cx.new(|cx| PageFix {
+                cx.new(|_cx| PageFix {
                     inner: shell,
-                    page: TabPage::Settings,
+                    surface: Surface::Management,
                 })
             })
             .expect("settings window");

@@ -9,7 +9,7 @@ use last_token_lib::domain::{
     AccountDashboard, CredentialSource, CredentialStatus, DashboardSnapshot, ProviderConfig,
     ProviderKind, PublicAccount, QuotaTier, RiskState, Settings, TierDashboard, TierForecast,
 };
-use last_token_lib::ui::shell::{AppShell, TabPage};
+use last_token_lib::ui::shell::{AppShell, Surface};
 use last_token_lib::ui::store::{AppStore, Busy};
 use last_token_lib::ui::tray::StoreGlobal;
 use last_token_lib::ui::tray_panel::TrayPanelView;
@@ -137,7 +137,7 @@ fn build_store(cx: &mut gpui_kit::App) -> Entity<AppStore> {
     cx.new(|_| store)
 }
 
-fn shell_page(cx: &mut TestAppContext, page: TabPage, w: f32, h: f32) {
+fn shell_page(cx: &mut TestAppContext, page: Surface, w: f32, h: f32) {
     let store = cx.update(build_store);
     let (handle, shell) = cx.update(|cx| {
         gpui_kit::open_window(
@@ -156,27 +156,34 @@ fn shell_page(cx: &mut TestAppContext, page: TabPage, w: f32, h: f32) {
         )
         .expect("open shell")
     });
-    shell.update(cx, |shell, _| shell.page = page);
+    shell.update(cx, |shell, _| shell.surface = page);
     cx.update_window(handle.into(), |_, window, cx| window.render_frame(cx))
         .expect("render frame");
 }
 
 #[gpui_kit::test]
-fn overview_renders(cx: &mut TestAppContext) {
+fn watch_renders(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
-    shell_page(cx, TabPage::Overview, 760., 720.);
+    // Watch is the default surface; no explicit set.
+    shell_page(cx, Surface::Watch, 760., 720.);
 }
 
 #[gpui_kit::test]
-fn providers_renders(cx: &mut TestAppContext) {
+fn management_renders(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
-    shell_page(cx, TabPage::Providers, 760., 720.);
+    shell_page(cx, Surface::Management, 760., 900.);
 }
 
-#[gpui_kit::test]
-fn settings_renders(cx: &mut TestAppContext) {
-    cx.update(gpui_kit::init);
-    shell_page(cx, TabPage::Settings, 760., 560.);
+#[test]
+fn surface_labels_localized() {
+    // The two-segment switch must resolve real copy in both locales, not
+    // fall back to raw i18n keys.
+    for lang in ["zh-CN", "en"] {
+        for key in ["tabs.watch", "tabs.management"] {
+            let label = last_token_lib::i18n::tr(lang, key);
+            assert_ne!(label, key, "missing i18n key {key} for {lang}");
+        }
+    }
 }
 
 #[gpui_kit::test]

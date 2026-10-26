@@ -7,7 +7,9 @@
   "tabs": {
     "overview": "Overview",
     "providers": "Providers",
-    "settings": "Settings"
+    "settings": "Settings",
+    "watch": "Watch",
+    "management": "Manage"
   },
   "error": {
     "boundaryTitle": "App Render Exception (React Error)",

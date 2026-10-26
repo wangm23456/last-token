@@ -442,7 +442,7 @@ impl AppShell {
                     Button::new("empty-add")
                         .label(crate::i18n::tr(&lang, "overview.addProvider"))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.page = crate::ui::shell::TabPage::Providers;
+                            this.surface = crate::ui::shell::Surface::Management;
                             cx.notify();
                         })),
                 )

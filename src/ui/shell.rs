@@ -12,11 +12,12 @@ use crate::domain::PublicAccount;
 use crate::ui::providers_tab::AccountForm;
 use crate::ui::store::{AppStore, Busy};
 
+/// Top-level surface of the two-sided IA (KTD1): the watch surface is the
+/// default; the management surface carries accounts/alerts/settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TabPage {
-    Overview,
-    Providers,
-    Settings,
+pub enum Surface {
+    Watch,
+    Management,
 }
 
 /// Add/edit account dialog form state and input handles.
@@ -26,7 +27,7 @@ pub struct DeletePending {
 
 pub struct AppShell {
     pub store: Entity<AppStore>,
-    pub page: TabPage,
+    pub surface: Surface,
     /// Open account form (Providers tab dialog).
     pub form: Option<AccountForm>,
     pub deleting: Option<PublicAccount>,
@@ -37,7 +38,7 @@ impl AppShell {
     pub fn new(_window: &mut Window, _cx: &mut Context<Self>, store: Entity<AppStore>) -> Self {
         Self {
             store,
-            page: TabPage::Overview,
+            surface: Surface::Watch,
             form: None,
             deleting: None,
             clear_confirm: false,
@@ -128,7 +129,7 @@ impl AppShell {
                     .small()
                     .label(crate::i18n::tr(&lang, "overview.settingsAria"))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.page = TabPage::Settings;
+                        this.surface = Surface::Management;
                         cx.notify();
                     })),
             );
@@ -173,14 +174,12 @@ impl Render for AppShell {
         let lang = self.lang(cx);
 
         let tab_labels = [
-            crate::i18n::tr(&lang, "tabs.overview"),
-            crate::i18n::tr(&lang, "tabs.providers"),
-            crate::i18n::tr(&lang, "tabs.settings"),
+            crate::i18n::tr(&lang, "tabs.watch"),
+            crate::i18n::tr(&lang, "tabs.management"),
         ];
-        let selected_ix = match self.page {
-            TabPage::Overview => 0,
-            TabPage::Providers => 1,
-            TabPage::Settings => 2,
+        let selected_ix = match self.surface {
+            Surface::Watch => 0,
+            Surface::Management => 1,
         };
 
         let tab_bar = TabBar::new("main-tabs")
@@ -188,18 +187,23 @@ impl Render for AppShell {
             .children(tab_labels.iter().map(|l| Tab::new().label(l.clone())))
             .selected_index(selected_ix)
             .on_click(cx.listener(|this, ix, _, cx| {
-                this.page = match ix {
-                    0 => TabPage::Overview,
-                    1 => TabPage::Providers,
-                    _ => TabPage::Settings,
+                this.surface = match ix {
+                    0 => Surface::Watch,
+                    _ => Surface::Management,
                 };
                 cx.notify();
             }));
 
-        let content = match self.page {
-            TabPage::Overview => self.render_overview(window, cx),
-            TabPage::Providers => self.render_providers(window, cx),
-            TabPage::Settings => self.render_settings(window, cx),
+        // U1 transition mount: the watch surface reuses the current overview
+        // render; the management surface stacks providers over settings until
+        // U2/U3 replace both containers.
+        let content = match self.surface {
+            Surface::Watch => self.render_overview(window, cx),
+            Surface::Management => v_flex()
+                .gap_6()
+                .child(self.render_providers(window, cx))
+                .child(self.render_settings(window, cx))
+                .into_any_element(),
         };
 
         v_flex()
