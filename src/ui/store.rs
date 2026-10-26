@@ -32,7 +32,10 @@ pub struct AppStore {
     pub settings: Settings,
     pub accounts: Vec<PublicAccount>,
     pub probes: Vec<CredentialProbe>,
-    pub history: Option<(String, String, Vec<HistoryPoint>)>,
+    /// Watch-surface selection (U2): selected account id, plus the 24h
+    /// per-tier histories of that account, keyed by tier id.
+    pub selected_account: Option<String>,
+    pub tier_histories: Option<(String, std::collections::HashMap<String, Vec<HistoryPoint>>)>,
     pub busy: Busy,
     /// One-shot toast messages; views drain and display them.
     pub toasts: Vec<Toast>,
@@ -83,7 +86,8 @@ impl AppStore {
             settings,
             accounts: Vec::new(),
             probes: Vec::new(),
-            history: None,
+            selected_account: None,
+            tier_histories: None,
             busy: Busy::Loading,
             toasts: Vec::new(),
             device_flow: None,
@@ -170,12 +174,26 @@ impl AppStore {
         .detach();
     }
 
-    pub fn load_history(&mut self, account_id: String, tier_id: String, cx: &mut Context<Self>) {
-        let result = service::get_tier_history(&self.core, &account_id, &tier_id, 24);
-        match result {
-            Ok(points) => self.history = Some((account_id, tier_id, points)),
-            Err(e) => self.toast(e.message, true),
+    /// Select an account on the watch surface and load every tier's 24h
+    /// history for sparklines and the big chart.
+    pub fn select_account(&mut self, account_id: String, cx: &mut Context<Self>) {
+        let tier_ids: Vec<String> = self
+            .snapshot
+            .as_ref()
+            .and_then(|s| s.accounts.iter().find(|a| a.account.id == account_id))
+            .map(|a| a.tiers.iter().map(|t| t.quota.id.clone()).collect())
+            .unwrap_or_default();
+        let mut histories = std::collections::HashMap::new();
+        for tier_id in tier_ids {
+            match service::get_tier_history(&self.core, &account_id, &tier_id, 24) {
+                Ok(points) => {
+                    histories.insert(tier_id, points);
+                }
+                Err(e) => self.toast(e.message, true),
+            }
         }
+        self.selected_account = Some(account_id);
+        self.tier_histories = Some((self.selected_account.clone().unwrap(), histories));
         cx.notify();
     }
 

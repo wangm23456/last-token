@@ -1,16 +1,14 @@
 //! Main window shell: header, tab navigation, shared view state.
 
-use gpui_kit::component::button::Button;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::theme::ActiveTheme;
-use gpui_kit::component::Sizable;
 use gpui_kit::component::{h_flex, v_flex, WindowExt};
 use gpui_kit::*;
 
 use crate::domain::PublicAccount;
 use crate::ui::providers_tab::AccountForm;
-use crate::ui::store::{AppStore, Busy};
+use crate::ui::store::AppStore;
 
 /// Top-level surface of the two-sided IA (KTD1): the watch surface is the
 /// default; the management surface carries accounts/alerts/settings.
@@ -32,16 +30,45 @@ pub struct AppShell {
     pub form: Option<AccountForm>,
     pub deleting: Option<PublicAccount>,
     pub clear_confirm: bool,
+    _store_observer: Subscription,
 }
 
 impl AppShell {
-    pub fn new(_window: &mut Window, _cx: &mut Context<Self>, store: Entity<AppStore>) -> Self {
+    pub fn new(
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+        store: Entity<AppStore>,
+    ) -> Self {
+        // Store updates (refresh, selection, settings) repaint the shell and
+        // seed the default watch selection once a snapshot exists.
+        let _store_observer = cx.observe(&store, |this, store, cx| {
+            let needs_default = store.read(cx).selected_account.is_none()
+                && store
+                    .read(cx)
+                    .snapshot
+                    .as_ref()
+                    .map(|s| !s.accounts.is_empty())
+                    .unwrap_or(false);
+            if needs_default {
+                let first = store
+                    .read(cx)
+                    .snapshot
+                    .as_ref()
+                    .and_then(|s| s.accounts.first().map(|a| a.account.id.clone()));
+                if let Some(first) = first {
+                    store.update(cx, |store, cx| store.select_account(first, cx));
+                }
+            }
+            let _ = this;
+            cx.notify();
+        });
         Self {
             store,
             surface: Surface::Watch,
             form: None,
             deleting: None,
             clear_confirm: false,
+            _store_observer,
         }
     }
 
@@ -67,103 +94,6 @@ impl AppShell {
             };
             window.push_notification(note, cx);
         }
-    }
-
-    pub(crate) fn render_toolbar(
-        &mut self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let theme = cx.theme().clone();
-        let store = self.store.read(cx);
-        let lang = store.language.clone();
-        let refreshed = store
-            .snapshot
-            .as_ref()
-            .map(|s| s.refreshed_at)
-            .map(|_| ())
-            .is_some();
-        let refreshed_at = store.snapshot.as_ref().map(|s| s.refreshed_at);
-        let has_custom_order = !store.settings.account_order.is_empty();
-        let busy = store.busy;
-
-        let time_str = refreshed_at.map(|ms| {
-            let dt = chrono::DateTime::from_timestamp_millis(ms)
-                .unwrap_or_else(chrono::Utc::now)
-                .with_timezone(&chrono::Local);
-            dt.format("%H:%M:%S").to_string()
-        });
-        let _ = refreshed;
-
-        let mut actions = h_flex().gap_2().items_center();
-        if has_custom_order {
-            let reset_label = crate::i18n::tr(&lang, "overview.resetOrder");
-            actions = actions.child(
-                Button::new("reset-order")
-                    .outline()
-                    .small()
-                    .label(reset_label)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.store.update(cx, |store, cx| {
-                            store.update_account_order(Vec::new(), cx);
-                        });
-                        window.refresh();
-                        let _ = this;
-                    })),
-            );
-        }
-        actions = actions
-            .child(
-                Button::new("refresh")
-                    .outline()
-                    .small()
-                    .label(crate::i18n::tr(&lang, "overview.refreshAria"))
-                    .loading(busy == Busy::Refreshing)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.store.update(cx, |store, cx| store.refresh(cx));
-                    })),
-            )
-            .child(
-                Button::new("go-settings")
-                    .outline()
-                    .small()
-                    .label(crate::i18n::tr(&lang, "overview.settingsAria"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.surface = Surface::Management;
-                        cx.notify();
-                    })),
-            );
-
-        v_flex()
-            .gap_1()
-            .child(
-                h_flex()
-                    .w_full()
-                    .justify_between()
-                    .items_center()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.colors.muted_foreground)
-                            .child(crate::i18n::tr(&lang, "overview.header")),
-                    )
-                    .child(actions),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.colors.muted_foreground)
-                    .child(match time_str {
-                        Some(t) => crate::i18n::tr_params(
-                            &lang,
-                            "overview.refreshedAt",
-                            &[("time", t.as_str())],
-                        ),
-                        None => String::new(),
-                    }),
-            )
-            .into_any_element()
     }
 }
 
@@ -194,13 +124,17 @@ impl Render for AppShell {
                 cx.notify();
             }));
 
-        // U1 transition mount: the watch surface reuses the current overview
-        // render; the management surface stacks providers over settings until
-        // U2/U3 replace both containers.
+        // Watch owns its own panes' scrolling; the management surface scrolls
+        // as one column.
         let content = match self.surface {
-            Surface::Watch => self.render_overview(window, cx),
+            Surface::Watch => self.render_watch(window, cx),
             Surface::Management => v_flex()
+                .id("mgmt-scroll")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
                 .gap_6()
+                .pr_1()
                 .child(self.render_providers(window, cx))
                 .child(self.render_settings(window, cx))
                 .into_any_element(),
@@ -254,12 +188,8 @@ impl Render for AppShell {
                     .child(tab_bar)
                     .child(
                         v_flex()
-                            .id("main-scroll")
                             .flex_1()
                             .min_h_0()
-                            // The tab content owns vertical scrolling; the
-                            // tab bar and header stay fixed.
-                            .overflow_y_scroll()
                             .child(content),
                     ),
             )

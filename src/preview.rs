@@ -72,6 +72,20 @@ fn account(id: &str, name: &str, provider: ProviderKind, tiers: Vec<TierDashboar
 fn mock_snapshot() -> DashboardSnapshot {
     // Real "now" so countdowns render like production.
     let now = chrono::Utc::now().timestamp_millis();
+    // Backend hands the snapshot worst-first (apply_account_order).
+    let risk = account(
+        "a:2",
+        "Kimi 长期号",
+        ProviderKind::Kimi,
+        vec![tier(
+            now,
+            "monthly",
+            "Monthly Limit",
+            82.0,
+            RiskState::AtRisk,
+            240,
+        )],
+    );
     let safe = account(
         "a:1",
         "Claude 工作号",
@@ -79,25 +93,40 @@ fn mock_snapshot() -> DashboardSnapshot {
         vec![
             tier(now, "five_hour", "5-Hour Session", 24.0, RiskState::Safe, 3),
             tier(now, "seven_day", "7-Day Limit", 41.0, RiskState::Safe, 72),
+            tier(now, "unlimited_seats", "Unlimited Seats", 12.0, RiskState::Safe, 72),
         ],
-    );
-    let risk = account(
-        "a:2",
-        "Kimi 长期号",
-        ProviderKind::Kimi,
-        vec![tier(now, "monthly", "Monthly Limit", 82.0, RiskState::AtRisk, 240)],
     );
     let mut broken = account("a:3", "Copilot 团队", ProviderKind::Copilot, vec![]);
     broken.credential_status = CredentialStatus::Unavailable;
     broken.error = Some("token has expired or is invalid".into());
-
-    DashboardSnapshot {
-        accounts: vec![safe, risk, broken],
+    let mut snapshot = DashboardSnapshot {
+        accounts: vec![risk, safe, broken],
         leading_risk: RiskState::AtRisk,
         refreshed_at: now - 90_000,
         next_refresh_at: now + 210_000,
         refresh_in_progress: false,
-    }
+    };
+    snapshot.accounts[1].tiers[2].quota.unlimited = true;
+    snapshot
+}
+
+fn mock_histories() -> std::collections::HashMap<String, Vec<crate::domain::HistoryPoint>> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let points = |base: f64| {
+        (0..12)
+            .map(|i| crate::domain::HistoryPoint {
+                sampled_at: now - (11 - i) * 30 * 60_000,
+                utilization: base + i as f64,
+                resets_at: None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut map = std::collections::HashMap::new();
+    map.insert("monthly".to_string(), points(75.0));
+    map.insert("five_hour".to_string(), points(18.0));
+    map.insert("seven_day".to_string(), points(35.0));
+    map.insert("unlimited_seats".to_string(), points(10.0));
+    map
 }
 
 fn build_store(cx: &mut gpui_kit::App) -> Entity<AppStore> {
@@ -134,7 +163,8 @@ fn build_store(cx: &mut gpui_kit::App) -> Entity<AppStore> {
                 account_id: Some("cli:gemini".into()),
             },
         ],
-        history: None,
+        selected_account: None,
+        tier_histories: Some(("a:2".into(), mock_histories())),
         busy: Busy::Idle,
         toasts: vec![],
         device_flow: None,
