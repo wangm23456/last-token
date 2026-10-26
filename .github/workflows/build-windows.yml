@@ -6,159 +6,70 @@ permissions:
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 jobs:
-  draft:
-    runs-on: ubuntu-22.04
-    outputs:
-      release_id: ${{ steps.cn_id.outputs.release_id }}
-      has_cn: ${{ steps.check_cn.outputs.has_cn }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check CrabNebula Secrets
-        id: check_cn
-        env:
-          CN_API_KEY: ${{ secrets.CN_API_KEY }}
-          CN_APPLICATION: ${{ secrets.CN_APPLICATION }}
-        run: |
-          if [ -n "$CN_API_KEY" ] && [ -n "$CN_APPLICATION" ]; then
-            echo "has_cn=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_cn=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Draft Release in CrabNebula Cloud
-        if: steps.check_cn.outputs.has_cn == 'true'
-        id: draft
-        uses: crabnebula-dev/cloud-release@v0
-        with:
-          command: release draft ${{ secrets.CN_APPLICATION }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
-      - name: Extract CrabNebula release id
-        if: steps.check_cn.outputs.has_cn == 'true'
-        id: cn_id
-        env:
-          CN_DRAFT_STDOUT: ${{ steps.draft.outputs.stdout }}
-        run: |
-          id=$(echo "$CN_DRAFT_STDOUT" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -n1)
-          if [ -n "$id" ]; then
-            echo "release_id=$id" >> $GITHUB_OUTPUT
-          else
-            echo "::warning::Could not parse release id from cn CLI output"
-          fi
-
   build:
-    needs: draft
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-          - platform: 'ubuntu-22.04'
-            args: ''
-          - platform: 'windows-latest'
-            args: ''
-
+          - platform: "macos-latest"
+            target: "aarch64-apple-darwin"
+          - platform: "ubuntu-22.04"
+            target: ""
+          - platform: "windows-latest"
+            target: ""
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
       - name: Install Linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libxkbcommon-dev libxcb1-dev libwayland-dev \
+            libfontconfig1-dev libssl-dev pkg-config
 
-      - name: Install frontend dependencies
-        run: bun install
+      # ponytail: plain release binaries for now; installer/signing pipeline
+      # (dmg, NSIS, notarization) needs a bundler decision for gpui-kit.
+      - name: Build release binary
+        run: cargo build --release --locked ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
-      - name: Import Apple Developer Certificate
-        if: matrix.platform == 'macos-latest'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      - name: Package artifact
+        shell: bash
         run: |
-          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$KEYCHAIN_PASSWORD" ]; then
-            echo "::error::Missing Apple signing secrets (APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / KEYCHAIN_PASSWORD)"
-            exit 1
+          mkdir -p dist
+          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            cp target/release/last-token.exe dist/last-token-windows-x86_64.exe
+          elif [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            cp target/${{ matrix.target }}/release/last-token dist/last-token-macos-aarch64
+          else
+            cp target/release/last-token dist/last-token-linux-x86_64
           fi
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          security find-identity -v -p codesigning build.keychain
-          rm -f certificate.p12
 
-      - name: Setup App Store Connect API Key
-        if: matrix.platform == 'macos-latest'
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-        run: |
-          if [ -z "$APPLE_API_KEY" ] || [ -z "$APPLE_API_ISSUER" ] || [ -z "$APPLE_API_KEY_P8" ]; then
-            echo "::error::Missing App Store Connect API secrets (APPLE_API_KEY / APPLE_API_ISSUER / APPLE_API_KEY_P8)"
-            exit 1
-          fi
-          mkdir -p "$HOME/private_keys"
-          KEY_PATH="$HOME/private_keys/AuthKey_${APPLE_API_KEY}.p8"
-          printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY_PATH"
-          chmod 600 "$KEY_PATH"
-          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
-          echo "Wrote App Store Connect API key to $KEY_PATH"
-
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+      - uses: actions/upload-artifact@v4
         with:
-          tagName: v__VERSION__
-          releaseName: 'Last Token v__VERSION__'
-          releaseBody: 'Release assets built via CI (macOS signed & notarized via App Store Connect API Key).'
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
+          name: last-token-${{ matrix.platform }}
+          path: dist/*
 
-      - name: Upload to CrabNebula Cloud
-        if: needs.draft.outputs.has_cn == 'true' && needs.draft.outputs.release_id != ''
-        uses: crabnebula-dev/cloud-release@v0
-        with:
-          command: release upload ${{ secrets.CN_APPLICATION }} ${{ needs.draft.outputs.release_id }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
-
-  publish:
-    needs: [draft, build]
-    if: needs.draft.outputs.has_cn == 'true' && needs.draft.outputs.release_id != ''
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Publish CrabNebula Release
-        uses: crabnebula-dev/cloud-release@v0
+      - uses: actions/download-artifact@v4
         with:
-          command: release publish ${{ secrets.CN_APPLICATION }} ${{ needs.draft.outputs.release_id }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Last Token ${{ github.ref_name }}
+          files: dist/*
+          generate_release_notes: true

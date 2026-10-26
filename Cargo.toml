@@ -1,0 +1,50 @@
+[package]
+name = "last-token"
+version = "0.2.5"
+description = "Cross-platform LLM API quota monitoring and exhaustion alerts"
+authors = ["wangm23456"]
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "last_token_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "last-token"
+path = "src/main.rs"
+
+[[bin]]
+name = "preview"
+path = "src/bin/preview.rs"
+required-features = ["preview"]
+
+[features]
+# Opens the real views with mock data, dumps PNGs to /tmp, and exits.
+# Usage: cargo run --features preview --bin preview
+preview = ["gpui-kit/test-support"]
+
+[dependencies]
+gpui-kit = "0.7.3"
+gpui-tray = { version = "0.1", default-features = false, features = ["gpui-kit"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["rustls-tls", "json"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+url = { version = "2", features = ["serde"] }
+hmac = "0.12"
+sha2 = "0.10"
+futures = "0.3"
+parking_lot = "0.12"
+dirs = "5"
+open = "5"
+image = "0.25"
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
+gpui-kit = { version = "0.7.3", features = ["test-support"] }

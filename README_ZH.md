@@ -24,7 +24,7 @@
 
 ## 简介
 
-**Last Token** 是一款基于 **Tauri 2 + React + Rust** 构建的高性能轻量级桌面应用。它专为频繁使用各类 LLM API 的开发者打造，能够自动捕获并监控各大 AI 服务提供商的配额使用情况、计算实时消耗速率，并准确预测额度耗尽时间，避免在关键开发阶段因 API 额度枯竭而中断工作。
+**Last Token** 是一款基于 **Rust + GPUI Kit (gpui-kit)** 构建的高性能轻量级桌面应用。它专为频繁使用各类 LLM API 的开发者打造，能够自动捕获并监控各大 AI 服务提供商的配额使用情况、计算实时消耗速率，并准确预测额度耗尽时间，避免在关键开发阶段因 API 额度枯竭而中断工作。
 
 所有的 API 凭证均优先从本地 CLI 配置文件或环境变量中只读加载，绝不上传至任何第三方服务器。
 
@@ -58,9 +58,7 @@
 
 ### 环境要求
 
-- [Node.js](https://nodejs.org/) (>= 18) 或 [Bun](https://bun.sh/)
-- [Rust](https://www.rust-lang.org/) (>= 1.75)
-- [Tauri CLI](https://tauri.app/v2/start/) 依赖环境
+- [Rust](https://www.rust-lang.org/) (>= 1.80)
 
 ### 快速开始
 
@@ -69,31 +67,25 @@
 git clone https://github.com/wangm23456/last-token.git
 cd last-token
 
-# 2. 安装前端依赖
-bun install
-
-# 3. 启动本地开发模式 (Vite + Tauri Dev)
-bun run tauri dev
+# 2. 启动开发模式
+cargo run
 ```
 
 ### 自动化测试与检查
 
 ```bash
-# 前端类型检查
-bun run typecheck
+# 编译检查（含全部测试目标）
+cargo check --all-targets
 
-# 运行前端单元测试 (Vitest)
-bun run test
-
-# 运行后端 Rust 单元测试
-cd src-tauri && cargo test
+# 运行 Rust 单元测试
+cargo test
 ```
 
 ### 应用打包
 
 ```bash
 # 构建本地生产包
-bun run tauri build
+cargo build --release
 ```
 
 ### 落地页 (`website/`)

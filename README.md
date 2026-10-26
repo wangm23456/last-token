@@ -24,7 +24,7 @@
 
 ## About
 
-**Last Token** is a lightweight desktop app built with **Tauri 2 + React + Rust**. It is designed for developers who rely on LLM APIs every day: it monitors quota usage across major AI providers, estimates burn rate, and predicts when credits will run out — so critical work is not interrupted by sudden exhaustion.
+**Last Token** is a lightweight desktop app built with **Rust + GPUI Kit (gpui-kit)**. It is designed for developers who rely on LLM APIs every day: it monitors quota usage across major AI providers, estimates burn rate, and predicts when credits will run out — so critical work is not interrupted by sudden exhaustion.
 
 API credentials are loaded locally from CLI config files or environment variables. Nothing is uploaded to third-party servers.
 
@@ -58,9 +58,7 @@ Grab installers from the [Releases](https://github.com/wangm23456/last-token/rel
 
 ### Requirements
 
-- [Node.js](https://nodejs.org/) (>= 18) or [Bun](https://bun.sh/)
-- [Rust](https://www.rust-lang.org/) (>= 1.75)
-- [Tauri CLI](https://tauri.app/v2/start/) toolchain
+- [Rust](https://www.rust-lang.org/) (>= 1.80)
 
 ### Quick start
 
@@ -68,23 +66,20 @@ Grab installers from the [Releases](https://github.com/wangm23456/last-token/rel
 git clone https://github.com/wangm23456/last-token.git
 cd last-token
 
-bun install
-bun run tauri dev
+cargo run
 ```
 
 ### Checks
 
 ```bash
-bun run typecheck
-bun run test
-
-cd src-tauri && cargo test
+cargo check --all-targets
+cargo test
 ```
 
 ### Production build
 
 ```bash
-bun run tauri build
+cargo build --release
 ```
 
 ### Landing page (`website/`)

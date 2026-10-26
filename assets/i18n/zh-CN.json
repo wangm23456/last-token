@@ -1,0 +1,212 @@
+{
+  "app": {
+    "name": "Last Token",
+    "running": "运行中"
+  },
+  "tabs": {
+    "watch": "盯盘",
+    "management": "管理"
+  },
+  "status": {
+    "credentialExpired": "凭据过期",
+    "credentialUnavailable": "查询失败",
+    "credentialMisconfigured": "配置错误",
+    "exhausted": "已耗尽",
+    "atRisk": "有耗尽风险",
+    "unknownReset": "重置时间未知",
+    "learning": "正在分析速率",
+    "safe": "额度充足",
+    "error": "查询错误",
+    "unknown": "未知",
+    "short": {
+      "exhausted": "耗尽",
+      "atRisk": "风险",
+      "unknownReset": "未知",
+      "learning": "学习",
+      "safe": "安全",
+      "error": "错误",
+      "unknown": "未知"
+    }
+  },
+  "overview": {
+    "refreshedAt": "最近刷新: {{time}}",
+    "refreshAria": "刷新额度",
+    "noQuota": "暂无活跃配额监控数据，点击卡片添加。",
+    "credentialError": "提供商凭证加载异常，请检查配置参数。",
+    "emptyTitle": "暂无启用的提供商",
+    "emptyDesc": "点击下方按钮，配置你的第一个 LLM 凭据以实时监控配额。",
+    "addProvider": "添加提供商",
+    "unlimitedQuota": "无限额度"
+  },
+  "settings": {
+    "language": {
+      "label": "界面语言",
+      "options": {
+        "zh-CN": "中文 (简体)",
+        "en": "English"
+      }
+    },
+    "behavior": {
+      "title": "通用行为",
+      "desc": "配置配额轮询刷新的工作频率。",
+      "refreshLabel": "自动后台刷新频率",
+      "options": {
+        "5": "每 5 分钟 (默认)",
+        "10": "每 10 分钟",
+        "15": "每 15 分钟",
+        "30": "每 30 分钟"
+      }
+    },
+    "data": {
+      "title": "数据与历史记录",
+      "desc": "管理本地历史快照数据。",
+      "autoCleanupDesc": "为了避免磁盘占用膨胀，本地 SQLite 数据库会自动保留最近 30 天的额度快照数据，每天首次更新后会自动修剪过期行。",
+      "clearHistory": "清空用量历史",
+      "clearHistoryDesc": "删除所有保存在本地的历史快照。耗尽预测模型将重置并重新开始学习。",
+      "clearButton": "清空历史",
+      "dialogTitle": "确定要清空预测历史吗？",
+      "dialogDesc": "该操作将清除本地存储的所有额度百分比快照。耗尽速率预测模型将重置为“正在分析消耗速度...”状态，直至累积 3 个新的快照样本。本操作无法撤销。",
+      "confirm": "确定清空"
+    },
+    "security": {
+      "title": "凭据与安全说明",
+      "envRead": "环境变量读取",
+      "envReadDesc": "敏感密钥优先从 shell 环境变量读取（如 ANTHROPIC_API_KEY、GITHUB_TOKEN 等），运行时仅将 OAuth 设备等动态令牌缓存在内存中。本地 SQLite 数据库仅包含显示名称、启用状态和非敏感的区域设置。",
+      "noRelay": "无外部中转与明文泄露",
+      "noRelayDesc": "Last Token 绝不会上传你的 API 密钥到任何外部服务器。所有 API 用量请求均直接从你的本地客户端安全发送给对应的服务提供商。"
+    },
+    "toasts": {
+      "updated": "设置更新成功",
+      "updateFailed": "设置更新失败: {{message}}",
+      "cleared": "历史记录及预测数据已清空",
+      "clearFailed": "清空历史失败: {{message}}"
+    },
+    "version": "Last Token · 版本 {{version}}"
+  },
+  "providers": {
+    "oneClickImport": {
+      "title": "一键导入凭证",
+      "desc": "检测本地官方 CLI 配置文件与当前环境变量，自动导入所有可用的 API 密钥和账户凭证。",
+      "button": "检测并导入"
+    },
+    "cli": {
+      "section": "官方 CLI 自动扫描",
+      "rescan": "重新扫描",
+      "detected": "已检测",
+      "expired": "已过期",
+      "notFound": "未检测到",
+      "error": "检测异常",
+      "claudeGuide": "尝试读取配置文件 ~/.claude/.credentials.json",
+      "codexGuide": "尝试读取配置文件 ~/.codex/auth.json (需为 chatgpt/OAuth 模式)",
+      "geminiGuide": "尝试读取配置文件 ~/.gemini/oauth_creds.json",
+      "claudeName": "Claude Code",
+      "codexName": "Codex CLI",
+      "geminiName": "Gemini CLI"
+    },
+    "manual": {
+      "section": "自管/手动提供商",
+      "autoDiscover": "自动发现",
+      "add": "添加提供商",
+      "emptyTitle": "暂无手动配置的提供商",
+      "emptyDesc": "点击上方“自动发现”可从环境变量批量检测添加（如 MOONSHOT_API_KEY / KIMI_API_KEY / MINIMAX_API_KEY 等）；或手动添加提供商。",
+      "disabled": "已禁用",
+      "sourceVolc": "AK/SK 环境变量",
+      "sourceApi": "API 环境变量",
+      "edit": "编辑",
+      "delete": "删除"
+    },
+    "form": {
+      "type": "提供商类型",
+      "name": "显示名称",
+      "githubDomain": "GitHub 域名 (可选)",
+      "githubDomainDesc": "企业版 GHES 实例需要填入完整的主机域名。默认使用 github.com。",
+      "startLink": "开始关联 GitHub 账户",
+      "requesting": "正在请求 GitHub 授权码...",
+      "deviceCode": "GitHub 激活码",
+      "openBrowser": "去浏览器激活",
+      "waiting": "等待 GitHub 授权状态...",
+      "region": "业务区域",
+      "orgId": "Organization ID",
+      "projectId": "Project ID",
+      "minimaxRegion": "平台接口域名",
+      "minimaxRegionCn": "中国站 (api.minimaxi.com)",
+      "minimaxRegionGlobal": "全球站 (api.minimax.io)",
+      "zhipuRegionCn": "中国站 (open.bigmodel.cn)",
+      "zhipuRegionGlobal": "国际站 (api.z.ai)",
+      "zenmuxUrl": "额度查询 API 链接",
+      "zenmuxUrlDesc": "ZenMux 提供的完整 HTTPS 额度状态查询接口。",
+      "volcengineRegion": "OpenAPI 默认服务区",
+      "accessKeyId": "AccessKey ID",
+      "secretAccessKey": "SecretAccessKey",
+      "apiKey": "API 密钥",
+      "enabled": "启用此账户监测",
+      "cancel": "取消",
+      "confirm": "确定"
+    },
+    "delete": {
+      "title": "删除提供商确认",
+      "desc": "你确定要删除 {{name}} 吗？此操作将从软件中移除该账户配置及相关用量历史（不会影响系统的真实环境变量），删除后无法撤销。",
+      "confirm": "确定删除"
+    },
+    "toasts": {
+      "saved": "提供商保存成功",
+      "saveFailed": "保存失败: {{message}}",
+      "deleted": "提供商删除成功",
+      "deleteFailed": "删除失败: {{message}}",
+      "noNewEnv": "未发现新的环境变量凭证",
+      "autoAdded": "已自动添加 {{count}} 个提供商：{{names}}",
+      "discoverFailed": "自动发现失败: {{message}}",
+      "importOk": "导入成功！自动添加了：{{parts}}",
+      "importCliPart": "官方 CLI 凭证 ({{names}})",
+      "importEnvPart": "环境变量提供商 ({{names}})",
+      "importJoin": " 和 ",
+      "importEmpty": "未检测到新的凭证（可能已导入，或相应环境变量/CLI 配置文件不存在）。",
+      "importFailed": "检测与导入失败: {{message}}",
+      "nameRequired": "请输入提供商名称",
+      "zenmuxHttps": "ZenMux 额度 URL 必须以 https:// 开头",
+      "zenmuxDomain": "ZenMux 额度 URL 必须包含 zenmux. 域名",
+      "zhipuTeamIdRequired": "请输入 Org ID 和 Project ID",
+      "codeExpired": "验证码已过期，请重新获取。",
+      "linkSuccess": "GitHub Copilot 关联成功",
+      "thresholdInvalid": "请将告警阈值设为 1–99 的整数"
+    },
+    "alert": {
+      "sectionTitle": "额度告警",
+      "afterFirstRefresh": "保存并完成首次刷新后可配置额度周期告警",
+      "thresholdLabel": "使用率阈值 (%)"
+    },
+    "alertSettingsBtn": "告警设置",
+    "provider": {
+      "kimi": "Kimi For Coding",
+      "zhipu": "智谱 GLM (个人版)",
+      "zhipu_team": "智谱 GLM (团队版)",
+      "minimax": "MiniMax 编程套餐",
+      "zenmux": "ZenMux 代理配额",
+      "volcengine": "火山方舟 Ark (OpenAPI)",
+      "copilot": "GitHub Copilot",
+      "claude": "Claude",
+      "codex": "Codex",
+      "gemini": "Gemini"
+    }
+  },
+  "format": {
+    "minutes": "{{n}}分钟",
+    "minutesShort": "{{n}}分钟",
+    "zeroMinutes": "0分钟",
+    "hoursMinutes": "{{h}}小时{{m}}分钟",
+    "ratePerHour": "{{rate}}%/时",
+    "rateAnalyzing": "分析中...",
+    "resetsIn": "{{time}}后重置",
+    "resetUnknown": "周期重置未指定",
+    "hoursShort": "{{h}}小时",
+    "hoursMinutesShort": "{{h}}小时{{m}}分",
+    "exhaustsIn": "{{time}}后耗尽"
+  },
+  "management": {
+    "nav": {
+      "accounts": "账户",
+      "alerts": "告警",
+      "settings": "设置"
+    }
+  }
+}

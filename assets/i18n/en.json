@@ -1,0 +1,212 @@
+{
+  "app": {
+    "name": "Last Token",
+    "running": "Running"
+  },
+  "tabs": {
+    "watch": "Watch",
+    "management": "Manage"
+  },
+  "status": {
+    "credentialExpired": "Credential Expired",
+    "credentialUnavailable": "Query Failed",
+    "credentialMisconfigured": "Configuration Error",
+    "exhausted": "Exhausted",
+    "atRisk": "At Risk",
+    "unknownReset": "Reset Time Unknown",
+    "learning": "Analyzing Rate",
+    "safe": "Quota Sufficient",
+    "error": "Query Error",
+    "unknown": "Unknown",
+    "short": {
+      "exhausted": "Exhausted",
+      "atRisk": "Risk",
+      "unknownReset": "Unknown",
+      "learning": "Learning",
+      "safe": "Safe",
+      "error": "Error",
+      "unknown": "Unknown"
+    }
+  },
+  "overview": {
+    "refreshedAt": "Last refreshed: {{time}}",
+    "refreshAria": "Refresh Quota",
+    "noQuota": "No active quota data. Click the card to add one.",
+    "credentialError": "Provider credential load failed. Please check the configuration.",
+    "emptyTitle": "No Enabled Providers",
+    "emptyDesc": "Click the button below to configure your first LLM credential and start monitoring quota in real time.",
+    "addProvider": "Add Provider",
+    "unlimitedQuota": "Unlimited Quota"
+  },
+  "settings": {
+    "language": {
+      "label": "Language",
+      "options": {
+        "zh-CN": "中文 (简体)",
+        "en": "English"
+      }
+    },
+    "behavior": {
+      "title": "General Behavior",
+      "desc": "Configure the polling refresh frequency for quota.",
+      "refreshLabel": "Auto Background Refresh Interval",
+      "options": {
+        "5": "Every 5 minutes (default)",
+        "10": "Every 10 minutes",
+        "15": "Every 15 minutes",
+        "30": "Every 30 minutes"
+      }
+    },
+    "data": {
+      "title": "Data & History",
+      "desc": "Manage local historical snapshot data.",
+      "autoCleanupDesc": "To avoid disk bloat, the local SQLite database retains only the last 30 days of quota snapshots; expired rows are pruned automatically after the first update each day.",
+      "clearHistory": "Clear usage history",
+      "clearHistoryDesc": "Delete all locally saved history snapshots. The exhaustion prediction model will reset and start learning again.",
+      "clearButton": "Clear History",
+      "dialogTitle": "Are you sure you want to clear prediction history?",
+      "dialogDesc": "This will delete all locally stored quota percentage snapshots. The exhaustion rate prediction model will reset to \"Analyzing consumption rate...\" until 3 new snapshots are collected. This action cannot be undone.",
+      "confirm": "Confirm Clear"
+    },
+    "security": {
+      "title": "Credentials & Security",
+      "envRead": "Environment Variable Reading",
+      "envReadDesc": "Sensitive keys are read from shell environment variables first (e.g. ANTHROPIC_API_KEY, GITHUB_TOKEN). Only dynamic tokens such as OAuth device codes are cached in memory at runtime. The local SQLite database only contains display names, enabled status, and non-sensitive region settings.",
+      "noRelay": "No External Relay or Plaintext Leak",
+      "noRelayDesc": "Last Token never uploads your API keys to any external server. All API usage requests are sent directly from your local client to the corresponding service provider."
+    },
+    "toasts": {
+      "updated": "Settings updated",
+      "updateFailed": "Failed to update settings: {{message}}",
+      "cleared": "History and prediction data cleared",
+      "clearFailed": "Failed to clear history: {{message}}"
+    },
+    "version": "Last Token · v{{version}}"
+  },
+  "providers": {
+    "oneClickImport": {
+      "title": "One-Click Import Credentials",
+      "desc": "Detect local official CLI config files and current environment variables, and automatically import all available API keys and account credentials.",
+      "button": "Detect & Import"
+    },
+    "cli": {
+      "section": "Official CLI Auto-Scan",
+      "rescan": "Rescan",
+      "detected": "Detected",
+      "expired": "Expired",
+      "notFound": "Not Detected",
+      "error": "Detection Error",
+      "claudeGuide": "Attempts to read config file ~/.claude/.credentials.json",
+      "codexGuide": "Attempts to read config file ~/.codex/auth.json (chatgpt/OAuth mode required)",
+      "geminiGuide": "Attempts to read config file ~/.gemini/oauth_creds.json",
+      "claudeName": "Claude Code",
+      "codexName": "Codex CLI",
+      "geminiName": "Gemini CLI"
+    },
+    "manual": {
+      "section": "Self-Managed / Manual Providers",
+      "autoDiscover": "Auto-Discover",
+      "add": "Add Provider",
+      "emptyTitle": "No manually configured providers",
+      "emptyDesc": "Click \"Auto-Discover\" above to batch-detect providers from environment variables (e.g. MOONSHOT_API_KEY / KIMI_API_KEY / MINIMAX_API_KEY); or add a provider manually.",
+      "disabled": "Disabled",
+      "sourceVolc": "AK/SK Environment Variables",
+      "sourceApi": "API Environment Variable",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "form": {
+      "type": "Provider Type",
+      "name": "Display Name",
+      "githubDomain": "GitHub Domain (Optional)",
+      "githubDomainDesc": "Enterprise GHES instances need a complete host domain. Defaults to github.com.",
+      "startLink": "Start GitHub Account Link",
+      "requesting": "Requesting GitHub authorization code...",
+      "deviceCode": "GitHub Activation Code",
+      "openBrowser": "Open in Browser",
+      "waiting": "Waiting for GitHub authorization status...",
+      "region": "Business Region",
+      "orgId": "Organization ID",
+      "projectId": "Project ID",
+      "minimaxRegion": "Platform API Domain",
+      "minimaxRegionCn": "China site (api.minimaxi.com)",
+      "minimaxRegionGlobal": "Global site (api.minimax.io)",
+      "zhipuRegionCn": "China site (open.bigmodel.cn)",
+      "zhipuRegionGlobal": "Global site (api.z.ai)",
+      "zenmuxUrl": "Quota Query API Link",
+      "zenmuxUrlDesc": "The complete HTTPS quota status query endpoint provided by ZenMux.",
+      "volcengineRegion": "OpenAPI Default Service Region",
+      "accessKeyId": "AccessKey ID",
+      "secretAccessKey": "SecretAccessKey",
+      "apiKey": "API Key",
+      "enabled": "Enable monitoring for this account",
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    },
+    "delete": {
+      "title": "Confirm Provider Deletion",
+      "desc": "Are you sure you want to delete {{name}}? This will remove the account configuration and its usage history from the app (it will not affect system environment variables). This action cannot be undone.",
+      "confirm": "Confirm Delete"
+    },
+    "toasts": {
+      "saved": "Provider saved",
+      "saveFailed": "Save failed: {{message}}",
+      "deleted": "Provider deleted",
+      "deleteFailed": "Delete failed: {{message}}",
+      "noNewEnv": "No new environment variable credentials found",
+      "autoAdded": "Auto-added {{count}} providers: {{names}}",
+      "discoverFailed": "Auto-discovery failed: {{message}}",
+      "importOk": "Import successful! Auto-added: {{parts}}",
+      "importCliPart": "Official CLI credentials ({{names}})",
+      "importEnvPart": "Environment variable providers ({{names}})",
+      "importJoin": " and ",
+      "importEmpty": "No new credentials detected (may already be imported, or corresponding env vars / CLI config files do not exist).",
+      "importFailed": "Detection & import failed: {{message}}",
+      "nameRequired": "Please enter a provider name",
+      "zenmuxHttps": "ZenMux quota URL must start with https://",
+      "zenmuxDomain": "ZenMux quota URL must contain the zenmux. domain",
+      "zhipuTeamIdRequired": "Please enter both Org ID and Project ID",
+      "codeExpired": "Verification code expired. Please request a new one.",
+      "linkSuccess": "GitHub Copilot linked successfully",
+      "thresholdInvalid": "Please set the alert threshold to an integer between 1 and 99"
+    },
+    "alert": {
+      "sectionTitle": "Quota Alerts",
+      "afterFirstRefresh": "Save and complete the first refresh to configure per-window alerts.",
+      "thresholdLabel": "Usage threshold (%)"
+    },
+    "alertSettingsBtn": "Alert settings",
+    "provider": {
+      "kimi": "Kimi For Coding",
+      "zhipu": "Zhipu GLM (Personal)",
+      "zhipu_team": "Zhipu GLM (Team)",
+      "minimax": "MiniMax Coding Plan",
+      "zenmux": "ZenMux Proxy Quota",
+      "volcengine": "Volcengine Ark (OpenAPI)",
+      "copilot": "GitHub Copilot",
+      "claude": "Claude",
+      "codex": "Codex",
+      "gemini": "Gemini"
+    }
+  },
+  "format": {
+    "minutes": "{{n}} minutes",
+    "minutesShort": "{{n}} min",
+    "zeroMinutes": "0 minutes",
+    "hoursMinutes": "{{h}}h {{m}}m",
+    "ratePerHour": "{{rate}}%/hour",
+    "rateAnalyzing": "Analyzing...",
+    "resetsIn": "Resets in {{time}}",
+    "resetUnknown": "Reset time not specified",
+    "hoursShort": "{{h}}h",
+    "hoursMinutesShort": "{{h}}h{{m}}m",
+    "exhaustsIn": "Exhausts in {{time}}"
+  },
+  "management": {
+    "nav": {
+      "accounts": "Accounts",
+      "alerts": "Alerts",
+      "settings": "Settings"
+    }
+  }
+}
