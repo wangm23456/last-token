@@ -486,10 +486,7 @@ impl AppShell {
                 div()
                     .text_xs()
                     .text_color(theme.colors.muted_foreground)
-                    .child(match absolute {
-                        Some(a) => a,
-                        None => String::new(),
-                    }),
+                    .child(absolute.unwrap_or_default()),
             )
             .child(
                 h_flex()

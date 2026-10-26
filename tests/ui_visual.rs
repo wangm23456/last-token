@@ -375,3 +375,30 @@ fn surface_labels_localized() {
     }
 }
 
+
+#[test]
+fn locale_key_sets_match() {
+    // R8/AE6: both locales must carry the same key tree so a language
+    // switch never falls back to raw keys.
+    let en: serde_json::Value =
+        serde_json::from_str(include_str!("../assets/i18n/en.json")).unwrap();
+    let zh: serde_json::Value =
+        serde_json::from_str(include_str!("../assets/i18n/zh-CN.json")).unwrap();
+    fn keys(v: &serde_json::Value, pre: &str, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, child) in map {
+                    let key = if pre.is_empty() { k.clone() } else { format!("{pre}.{k}") };
+                    keys(child, &key, out);
+                }
+            }
+            _ => out.push(pre.to_string()),
+        }
+    }
+    let (mut a, mut b) = (Vec::new(), Vec::new());
+    keys(&en, "", &mut a);
+    keys(&zh, "", &mut b);
+    a.sort();
+    b.sort();
+    assert_eq!(a, b, "locale key trees diverge between en and zh-CN");
+}

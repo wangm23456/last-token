@@ -177,9 +177,9 @@ impl AppShell {
                             },
                         );
                         let input = cx.new(|cx| {
-                            let s = InputState::new(_window, cx)
-                                .placeholder("80");
-                            s
+                            
+                            InputState::new(_window, cx)
+                                .placeholder("80")
                         });
                         input.update(cx, |state, cx| {
                             state.set_value(r.threshold_percent.to_string(), _window, cx);
